@@ -32,12 +32,17 @@ GRID_HEIGHT:
     .word 18                # The game board is 18 units high (0 to 17)
 EMPTY_COLOR:
     .word 0x00000000        # The value used to represent an empty cell
+
+# The main game board: 6 columns x 12 rows. Stores colour words (4 bytes each).
+# Total size: 6 * 12 * 4 = 288 bytes. Initialized to all zeros (EMPTY_COLOR).
 GAME_GRID:
     .space 432
 GRID_SIZE:
     .word 108               # 6 * 18 = 108
 MATCH_GRID:
     .byte 0:108
+MATCH_FLAG_VAL:
+    .byte 1
 
 ##############################################################################
 # Mutable Data
@@ -57,17 +62,30 @@ currCol2:      .word 0                  # Bottom gem colour
 currColX:      .word 2                  # Column X position 
 currColY:      .word 1                  # Column Y position 
 
-debug_currX:    .asciiz "currColX: "
-debug_currY:    .asciiz " currColY: "
+x_msg:    .asciiz "currColX: "
+y_msg:    .asciiz " currColY: "
 newline:  .asciiz "\n"
 debug_msg: .asciiz " match found"
+debug_msg2: .asciiz " respondtoS"
+debug_msg3: .asciiz "V_Collision_Found"
+debug_msg4: .asciiz " checkKeyBoardInput"
+debug_msg5: .asciiz "c"
+debug_msg6: .asciiz "loop"
+debug_msg7: .asciiz "V_RET:" 
+debug_msg8: .asciiz "drawCurrCol"
+lock_debug_msg: .asciiz "Locking: X="
+y_label:
+    .asciiz "Gem at (Y:"
+x_label:
+    .asciiz ", X:"
+end_label:
+    .asciiz ")\n"
 color_label: .asciiz ") Color: "
 debug_msg_resetY: .asciiz "Y reset to: "
 debug_msg_currY: .asciiz "currColY IN drawCurrCol:"
 debug_msg_lockY:  .asciiz "currColY before lock: "
 debug_msg_loop: .asciiz "debug_msg_loop "
 comma: .asciiz ", "
-space: .asciiz " "
 debug_msg_lock: .asciiz "Locking color: "
 lock_start_msg: .asciiz "--- LOCK START ---\n"
 lock_gem_msg:   .asciiz "Locking Gem: GridX="
@@ -75,13 +93,15 @@ lock_gridy_msg: .asciiz " GridY="
 lock_color_msg: .asciiz " Color="
 lock_addr_msg:  .asciiz " Addr="
 debug_match_found_msg: .asciiz "--- MATCH FOUND. Grid state after clearing (before gravity): ---\n"
-debug_match_check_str:  .asciiz "match loop entered"
+debug_match_check_str:  .asciiz "Checking cell ("
+debug_comma_str:        .asciiz ", "
 debug_color_str:        .asciiz "): Color "
 debug_match_clear_str:  .asciiz "!!! MATCH FOUND and CLEARED starting at ("
 debug_closing_str:      .asciiz ")\n"
+debug_newline_str:      .asciiz "\n"
 debug_before_gravity:   .asciiz "--- DEBUG: BEFORE Apply_Gravity ---\n"
     debug_after_gravity:    .asciiz "--- DEBUG: AFTER Apply_Gravity ---\n"
-debug_gravity_base_str: .asciiz "Gravity Start"
+debug_gravity_base_str: .asciiz "--- Gravity Start: Base Addr ($s2) = 0x"
     debug_gravity_move_str: .asciiz "--- GRAVITY MOVE: "
     debug_Y_Src:            .asciiz "Y_Src="
     debug_Y_Dst:            .asciiz " Y_Dst="
@@ -93,7 +113,6 @@ debug_gravity_base_str: .asciiz "Gravity Start"
     debug_gem2_xy_str:   .asciiz "DBG GEM 2 X,Y: ("
     debug_gem2_index_str: .asciiz "), Index (Byte Offset): "
     debug_gem2_addr_str:  .asciiz ", Address: 0x"
-    debug_after_match: .asciiz "after matched"
 ##############################################################################
 # Code
 ##############################################################################
@@ -154,27 +173,19 @@ Match_And_Fall_Loop:
 
     # 9. Check for matches
     jal Check_For_Matches
-    move $s0, $v0      
-    
-    # debugging if match is found
-    move $t9, $v0
-    li $v0, 1
-    move $a0, $s0
-    syscall
-    li $v0, 4
-    la $a0, debug_msg_resetY
-    syscall
-    move $v0, $t9
+    move $s0, $v0                    # $s0 = Was there a match?
     
     beq $s0, $zero, Skip_Gravity      
 
+    # 10. Apply gravity (THE CORRUPTION SUSPECT)
     jal Apply_Gravity
-    move $s1, $v0                   
-
+    move $s1, $v0                    # $s1 = Did anything fall?
+    
+    # 11. If anything changed (match or fall, redraw and loop again
     or $t0, $s0, $s1
     beq $t0, $zero, Match_Loop_End   # If $s0|$s1 is 0, exit loop
     
-    # jal Print_Grid_Contents
+    # We skip Draw_Game_Grid inside the loop to eliminate it as a suspect for now
     jal Draw_Game_Grid               
     j Match_And_Fall_Loop
     
@@ -189,6 +200,72 @@ Handle_GameOver:
     # Placeholder for game over screen/message
     li $v0, 10
     syscall
+
+print_grid_cell_for_debug:
+    addi $sp, $sp, -16
+    sw $ra, 12($sp)
+    sw $s0, 0($sp)       # gridX
+    sw $s1, 4($sp)       # startY
+    sw $s2, 8($sp)       # loop counter
+
+    move $s0, $a0        # s0 = gridX
+    move $s1, $a1        # s1 = startY
+    li $s2, 0            # loop counter (0..2)
+
+PrintLoopDbg:
+    beq $s2, 3, PrintDoneDbg
+
+    # Compute Y = startY + s2
+    add $s3, $s1, $s2     # s3 = current Y
+
+    # index = Y * WIDTH + X
+    lw $s4, GRID_WIDTH
+    mul $s5, $s3, $s4
+    add $s5, $s5, $s0     # s5 = index
+
+    sll $s5, $s5, 2       # *4 for byte offset
+    la $s6, GAME_GRID
+    add $s6, $s6, $s5
+    lw $s7, 0($s6)        # s7 = color
+
+    # print y label
+    li $v0, 4
+    la $a0, y_label
+    syscall
+    li $v0, 1
+    move $a0, $s3
+    syscall
+
+    # print x label
+    li $v0, 4
+    la $a0, x_label
+    syscall
+    li $v0, 1
+    move $a0, $s0
+    syscall
+
+    # print color
+    li $v0, 4
+    la $a0, color_label
+    syscall
+    li $v0, 1
+    move $a0, $s7
+    syscall
+
+    li $v0, 4
+    la $a0, newline
+    syscall
+
+    addi $s2, $s2, 1
+    j PrintLoopDbg
+
+PrintDoneDbg:
+    lw $s0, 0($sp)
+    lw $s1, 4($sp)
+    lw $s2, 8($sp)
+    lw $ra, 12($sp)
+    addi $sp, $sp, 16
+    jr $ra
 	
 CheckKeyboardInput:
     # program delay for 1 millisecond
@@ -320,7 +397,6 @@ shuffleCurrCol:
     sw $s0, 0($sp)
     
     jal  eraseCurrCol                  # Erase current column 
-    jal Draw_Game_Grid
 
     lw $t0, currCol0                   # $t0 = top gem
     lw $t1, currCol1                   # $t1 = middle gem
@@ -349,8 +425,6 @@ moveCurrLeft:
     beq $v0, 1, M_Left_End
     
     jal eraseCurrCol
-    # jal Draw_Game_Grid
-    
     lw $t9, currColX
     addi $t9, $t9, -1
     sw $t9, currColX
@@ -384,7 +458,6 @@ moveCurrDown:
     beq $v0, 1, M_Down_End
     
     jal eraseCurrCol
-    # jal Draw_Game_Grid
     
     lw   $t0, currColY      # load currColY value
     addi $t0, $t0, 1  
@@ -417,8 +490,6 @@ moveCurrRight:
     beq $v0, 1, M_Right_End
     
     jal eraseCurrCol
-    # jal Draw_Game_Grid
-    
     lw $t9, currColX
     addi $t9, $t9, 1
     sw $t9, currColX
@@ -529,8 +600,7 @@ Draw_Game_Grid:
     li $t5, 0                      # $t5 = Row counter (Y, 0 to 17)
     
 GridRowLoop:
-    addi $t3, $t4, -1
-    beq $t5, $t3, GridDraw_End     # If Y == GRID_HEIGHT, done
+    beq $t5, $t4, GridDraw_End     # If Y == GRID_HEIGHT, done
     
     li $t6, 0                      # $t6 = Column counter (X, 0 to 5)
     
@@ -546,25 +616,18 @@ GridColLoop:
     add $t8, $t1, $t8              # Address in GAME_GRID
     lw $t9, 0($t8)                 # $t9 = Color
     
-    # # Check if empty
-    # beq $t9, $t3, Next_Grid_Column
+    # Check if empty
+    beq $t9, $t3, Next_Grid_Column
     
-    # # Calculate display address
-    # addi $t7, $t5, 1               # Display Y
-    # addi $t8, $t6, 1               # Display X
-    # sll $t7, $t7, 7                # * 128
-    # sll $t8, $t8, 2                # * 4
-    # add $t7, $t7, $t8
-    # add $t7, $t0, $t7
-    # sw $t9, 0($t7)
     
-    addi $t7, $t5, 1               # $t7 = Display Y ($t5 + 1)
-    addi $t8, $t6, 1               # $t8 = Display X ($t6 + 1)
-    sll $t7, $t7, 7                # Display Y * 128
-    sll $t8, $t8, 2                # Display X * 4
-    add $t7, $t7, $t8              # Row offset + Column offset
-    add $t7, $t0, $t7              # $t7 = Final Display Address
     
+    # Calculate display address
+    addi $t7, $t5, 1               # Display Y
+    addi $t8, $t6, 1               # Display X
+    sll $t7, $t7, 7                # * 128
+    sll $t8, $t8, 2                # * 4
+    add $t7, $t7, $t8
+    add $t7, $t0, $t7
     sw $t9, 0($t7)
 
 Next_Grid_Column:
@@ -645,11 +708,11 @@ H_Collision_Found:
     li $v0, 1
 
 H_End:
-    lw $s2, 0($sp)                 
-    lw $s1, 4($sp)                  
-    lw $s0, 8($sp)                  
+    lw $s2, 0($sp)                  # ← ADD
+    lw $s1, 4($sp)                  # ← ADD
+    lw $s0, 8($sp)                  # ← ADD
     lw $ra, 12($sp)
-    addi $sp, $sp, 16               
+    addi $sp, $sp, 16               # ← CHANGE
     jr $ra
 
 Check_Vertical_Collision:
@@ -676,7 +739,7 @@ V_Check_Loop:
     add $t5, $t1, $s0      # Y of current gem (display coordinates)
 
     # Check if gem is at the bottom of play area (Y = 17 in display coords)
-    li $t6, 18
+    li $t6, 17
     bge $t5, $t6, V_Collision_Found
     
     # Skip if gem is above grid (negative Y)
@@ -685,12 +748,12 @@ V_Check_Loop:
     addi $t6, $t5, 1       # check cell below (Y+1 in display coordinates)
 
     # If cell below is bottom of play area, collision
-    li $t7, 18
+    li $t7, 17
     bge $t6, $t7, V_Collision_Found
-    
-    # checking for collision with gem in grid
 
     # Convert display coordinates to grid coordinates for grid access
+    # Grid X = display X - 1 (because display X=1-6, grid X=0-5)
+    # Grid Y = display Y - 1 (because display Y=1-17, grid Y=0-16)
     addi $a0, $t0, -1      # grid X
     addi $a1, $t6, -1      # grid Y (cell below)
 
@@ -708,7 +771,7 @@ V_Check_Loop:
     add $t7, $t2, $t7      # GAME_GRID address
     lw  $t8, 0($t7)        # Color at grid[grid_X][grid_Y]
     
-    bne $t8, $t9, V_Collision_Found  # If not empty, collision
+    bne $t8, $t9, V_Collision_Found  # If not empty, collision!
 
 V_Skip_Gem:
     addi $s0, $s0, 1
@@ -741,8 +804,8 @@ Lock_Column_In_Place:
     lw $s4, currCol1         # $s4 = middle color
     lw $s5, currCol2         # $s5 = bottom color
 
-    # loading grid data
     lw $s2, GRID_WIDTH       # $s2 = width (6)
+    # The following variables are used inside the loop and don't need to be s-registers
     lw $t9, GRID_HEIGHT      # $t9 = height (18)
     la $t0, GAME_GRID        # $t0 = grid base address (&GAME_GRID)
 
@@ -751,9 +814,9 @@ LockLoop:
     beq $t2, 3, LockLoopEnd
 
     # Compute grid Y of this gem
-    add $t5, $s1, $t2        # $t5 = grid Y of this gem (+ loop index)
-    blt $t5, $zero, Skip_Lock  # bounds check
-    bge $t5, $t9, Skip_Lock    # bounds check
+    add $t5, $s1, $t2        # $t5 = grid Y of this gem
+    blt $t5, $zero, Skip_Lock
+    bge $t5, $t9, Skip_Lock
 
     # Select color
     li $t6, 0
@@ -797,91 +860,10 @@ Lock_Done:
     addi $sp, $sp, 12
     jr $ra
 
-# Apply_Gravity:
-    # # Save $ra and all used $s registers
-    # addi $sp, $sp, -36
-    # sw $ra, 32($sp)
-    # sw $s0, 28($sp)
-    # sw $s1, 24($sp)
-    # sw $s2, 20($sp)
-    # sw $s3, 16($sp)
-    # sw $s4, 12($sp)
-    # sw $s5, 8($sp)
-    # sw $s6, 4($sp)
-    
-    # # Setup initial registers
-    # li $s0, 0                   # moved_flag
-    # lw $s1, GRID_WIDTH          # WIDTH
-    # # add $s1, $s1, -1            
-    # la $s2, GAME_GRID           # &GAME_GRID
-    # lw $s3, EMPTY_COLOR         # EMPTY_COLOR
+# ============================
+# Apply_Gravity with Debugging
+# ============================
 
-    # li $s4, 0                   # X = 0 (column loop)
-# ColLoop_Gravity:
-    # beq $s4, $s1, GravityEnd
-
-    # li $s6, -1                  # drop_target_Y
-    # lw $t0, GRID_HEIGHT
-    # addi $t0, $t0, -2
-    # move $s5, $t0               # Y = HEIGHT-1
-
-# RowLoop_Gravity:
-    # blt $s5, $zero, NextCol_Gravity
-
-    # # Compute index and addresses
-    # mul $t0, $s5, $s1           # t0 = Y*WIDTH
-    # add $t1, $t0, $s4           # Index
-    # sll $t2, $t1, 2
-    # add $t3, $s2, $t2           # &GAME_GRID[Y][X]
-    # lw $t4, 0($t3)              # Color at [Y][X]
-
-    # # If empty, update drop_target_Y
-    # beq $t4, $s3, GemIsEmpty
-
-    # # If colored gem and drop target exists, move it
-    # blt $s6, $zero, NextRow_Gravity
-
-    # # Compute destination index and address
-    # mul $t5, $s6, $s1
-    # add $t6, $t5, $s4           # Index_Dst
-    # sll $t7, $t6, 2
-    # add $t8, $s2, $t7           # &GAME_GRID[drop_target_Y][X]
-
-    # # Move gem
-    # sw $t4, 0($t8)              # dst = color
-    # sw $s3, 0($t3)              # src = EMPTY
-
-    # li $s0, 1                   # Mark something moved
-    # # move $s6, $s5               # Update drop_target_Y
-    # addi $s6, $s6, -1
-
-    # j NextRow_Gravity
-
-# GemIsEmpty:
-    # move $s6, $s5               # Update drop_target_Y
-# NextRow_Gravity:
-    # addi $s5, $s5, -1
-    # j RowLoop_Gravity
-
-# NextCol_Gravity:
-    # addi $s4, $s4, 1
-    # j ColLoop_Gravity
-
-# GravityEnd:
-    # move $v0, $s0               # Return moved_flag
-
-    # # Restore registers
-    # lw $s6, 4($sp)
-    # lw $s5, 8($sp)
-    # lw $s4, 12($sp)
-    # lw $s3, 16($sp)
-    # lw $s2, 20($sp)
-    # lw $s1, 24($sp)
-    # lw $s0, 28($sp)
-    # lw $ra, 32($sp)
-    # addi $sp, $sp, 36
-    # jr $ra
-    
 Apply_Gravity:
     # Save $ra and all used $s registers
     addi $sp, $sp, -36
@@ -899,62 +881,113 @@ Apply_Gravity:
     lw $s1, GRID_WIDTH          # WIDTH
     la $s2, GAME_GRID           # &GAME_GRID
     lw $s3, EMPTY_COLOR         # EMPTY_COLOR
-    lw $t9, GRID_HEIGHT         # HEIGHT
-    
+
+    # --- DEBUG: Print initial grid ---
+    li $v0, 4
+    la $a0, debug_gravity_start_str
+    syscall
+    jal Print_Grid_Contents      # Custom routine to print full grid
+
     li $s4, 0                   # X = 0 (column loop)
-    
 ColLoop_Gravity:
     beq $s4, $s1, GravityEnd
-    
-    # Scan ENTIRE column from BOTTOM to TOP
-    # Track write_pos (where next gem should go)
-    li $s6, 16                  # write_pos = 16 (actual bottom row)
-    li $s5, 16           # read_pos = HEIGHT-1 (start at bottom)
-    
+
+    li $s6, -1                  # drop_target_Y
+    lw $t0, GRID_HEIGHT
+    addi $t0, $t0, -1
+    move $s5, $t0               # Y = HEIGHT-1
+
 RowLoop_Gravity:
     blt $s5, $zero, NextCol_Gravity
-    
-    # Read from read_pos
-    mul $t0, $s5, $s1
-    add $t1, $t0, $s4
+
+    # Compute index and addresses
+    mul $t0, $s5, $s1           # t0 = Y*WIDTH
+    add $t1, $t0, $s4           # Index
     sll $t2, $t1, 2
-    add $t3, $s2, $t2           # &GAME_GRID[read_pos][X]
-    lw $t4, 0($t3)              # gem at read_pos
-    
-    # If empty, just move to next
-    beq $t4, $s3, NextRead
-    
-    # Found a gem - write it to write_pos
-    # Calculate write address
+    add $t3, $s2, $t2           # &GAME_GRID[Y][X]
+    lw $t4, 0($t3)              # Color at [Y][X]
+
+    # --- DEBUG: Print current position and color ---
+    li $v0, 4
+    la $a0, debug_rowcol_color_str
+    syscall
+    li $v0, 1
+    move $a0, $s4               # Column X
+    syscall
+    li $v0, 1
+    move $a0, $s5               # Row Y
+    syscall
+    li $v0, 1
+    move $a0, $t4               # Color
+    syscall
+
+    # If empty, update drop_target_Y
+    beq $t4, $s3, GemIsEmpty
+
+    # If colored gem and drop target exists, move it
+    blt $s6, $zero, NextRow_Gravity
+
+    # Compute destination index and address
     mul $t5, $s6, $s1
-    add $t6, $t5, $s4
+    add $t6, $t5, $s4           # Index_Dst
     sll $t7, $t6, 2
-    add $t8, $s2, $t7           # &GAME_GRID[write_pos][X]
-    
-    # If read_pos == write_pos, gem doesn't move
-    beq $s5, $s6, GemInPlace
-    
-    # Move gem from read_pos to write_pos
-    sw $t4, 0($t8)              # Write to write_pos
-    sw $s3, 0($t3)              # Clear read_pos
-    li $s0, 1                   # Set moved_flag
-    
-GemInPlace:
-    # After handling a gem, move write_pos up
-    addi $s6, $s6, -1
-    
-NextRead:
-    # Move read_pos up
+    add $t8, $s2, $t7           # &GAME_GRID[drop_target_Y][X]
+
+    # --- DEBUG: Print move info ---
+    li $v0, 4
+    la $a0, debug_gravity_move_str
+    syscall
+    li $v0, 1
+    move $a0, $s5               # Y source
+    syscall
+    li $v0, 1
+    move $a0, $s6               # Y dest
+    syscall
+    li $v0, 1
+    move $a0, $s4               # Column X
+    syscall
+    li $v0, 1
+    move $a0, $t4               # Color
+    syscall
+
+    # Move gem
+    sw $t4, 0($t8)              # dst = color
+    sw $s3, 0($t3)              # src = EMPTY
+
+    # --- DEBUG: Verify move ---
+    lw $t9, 0($t8)
+    li $v0, 1
+    move $a0, $t9
+    syscall
+    lw $t9, 0($t3)
+    li $v0, 1
+    move $a0, $t9
+    syscall
+
+    li $s0, 1                   # Mark something moved
+    move $s6, $s5               # Update drop_target_Y
+
+    j NextRow_Gravity
+
+GemIsEmpty:
+    move $s6, $s5               # Update drop_target_Y
+NextRow_Gravity:
     addi $s5, $s5, -1
     j RowLoop_Gravity
-    
+
 NextCol_Gravity:
     addi $s4, $s4, 1
     j ColLoop_Gravity
-    
+
 GravityEnd:
     move $v0, $s0               # Return moved_flag
-    
+
+    # --- DEBUG: Print final grid ---
+    li $v0, 4
+    la $a0, debug_gravity_end_str
+    syscall
+    jal Print_Grid_Contents
+
     # Restore registers
     lw $s6, 4($sp)
     lw $s5, 8($sp)
@@ -967,267 +1000,265 @@ GravityEnd:
     addi $sp, $sp, 36
     jr $ra
 
+# ----------------------------
+# Print_Grid_Contents
+# ----------------------------
 # Prints the full GAME_GRID for debugging (Row-major order dump)
 Print_Grid_Contents:
-    # Save used $s registers ($s4 and $s5)
-    addi $sp, $sp, -8  
-    sw $s4, 4($sp)
-    sw $s5, 0($sp)
-
-    lw $t0, GRID_WIDTH             # $t0 = W (6)
-    li $s5, 0                   # $s5 = Row Y (0)
+    # Save used registers on stack
+    addi $sp, $sp, -8
+    sw $s5, 4($sp) # Y loop counter
+    sw $s4, 0($sp) # X loop counter
+    
+    # Setup registers
+    lw $t0, GRID_WIDTH # $t0 = W (6)
+    lw $t1, GRID_HEIGHT # $t1 = H (18)
+    la $t4, GAME_GRID # $t4 = &GAME_GRID
+    
+    li $s5, 0 # $s5 = Y = 0
 PrintGrid_Rows:
-    lw $t1, GRID_HEIGHT             # $t1 = H (18)
-    add $t1, $t1, -1                # playing grid height is 17
-    bge $s5, $t1, PrintGrid_Done   # if Y >= H, finish printing
-    
-    li $s4, 0                   # $s4 = Column X (0)
+    beq $s5, $t1, PrintGrid_Done # if Y == 18, end outer loop
+    
+    li $s4, 0 # $s4 = X = 0
 PrintGrid_Cols:
-    beq $s4, $t0, NextGrid_Row     # if X == W, go to next row
-    
-    # Calculate Index (Y * W + X) * 4
-    mul $t2, $s5, $t0
-    add $t2, $t2, $s4
-    sll $t3, $t2, 2
-    la $t4, GAME_GRID
-    add $t5, $t4, $t3
-    
-    lw $t6, 0($t5)              # $t6 = Load the color/value from memory (GAME_GRID[Y][X])
+    beq $s4, $t0, NextGrid_Row # if X == 6, end inner loop
     
-    # Print the integer value (color)
-    li $v0, 1                   # Syscall code for Print Integer
-    move $a0, $t6               # Set argument to the loaded color value
+    # Calculate address of (X,Y)
+    mul $t2, $s5, $t0 
+    add $t2, $t2, $s4 
+    sll $t3, $t2, 2 
+    add $t5, $t4, $t3
+    
+    # Print gem color
+    lw $a0, 0($t5)
+    li $v0, 1
     syscall
     
-    # Print a space/separator
-    li $v0, 4                   # Syscall code for Print String
-    la $a0, space     # (Assuming 'debug_space_str' is defined as " ")
-    syscall
-    
-    # Advance X and loop
-    addi $s4, $s4, 1
-    j PrintGrid_Cols
-    
-NextGrid_Row:
-    # Print a newline at the end of the row 
+    # Print space for separation
     li $v0, 4
-    la $a0, newline 
+    la $a0, comma
     syscall
     
-    # Advance Y and loop
-    addi $s5, $s5, 1
-    j PrintGrid_Rows
-    
-PrintGrid_Done:
-    # Print a final newline after the dump
-    li $v0, 4
-    la $a0, newline
-    syscall
-    
-    # Restore registers and stack
-    lw $s5, 0($sp)
-    lw $s4, 4($sp)
-    addi $sp, $sp, 8
-    
-    jr $ra
-
-
-# Function: Check_For_Matches
-# Scan GAME_GRID for 3+ in a row (H, V, D). Clears the matches if found.
-# Returns: $v0 = 1 if match found and cleared, 0 otherwise.
-Check_For_Matches:
+    # Advance X and loop
+    addi $s4, $s4, 1
+    j PrintGrid_Cols
     
-    # Save $ra and all used $s registers (9 registers * 4 bytes = 36 bytes)
-    addi $sp, $sp, -36
-    sw $ra, 32($sp)
-    sw $s0, 28($sp)                 # $s0 = match_found_flag (1 for found, 0 otherwise)
-    sw $s1, 24($sp)                 # $s1 = W (GRID_WIDTH = 6)
-    lw $s2, GRID_HEIGHT             # $s2 = 18 (Height)
-    sw $s2, 20($sp)                 # Save H
-    la $s3, GAME_GRID               # $s3 = &GAME_GRID
-    sw $s3, 16($sp)
-    lw $s4, EMPTY_COLOR             # $s4 = 0
-    sw $s4, 12($sp)
-    li $s5, 0                       # $s5 = Y loop counter (Start Y = 0)
-    sw $s5, 8($sp)
-    li $s6, 0                       # $s6 = X loop counter (Start X = 0)
-    sw $s6, 4($sp)
-    li $s7, 0                       # $s7 will hold Current X for Check_Direction
-    sw $s7, 0($sp)
+NextGrid_Row:
+    # Print newline for formatting
+    li $v0, 4
+    la $a0, debug_newline_str
+    syscall
+    
+    # Advance Y and loop
+    addi $s5, $s5, 1
+    j PrintGrid_Rows
+    
+PrintGrid_Done:
+    # Print a final newline after the dump
+    li $v0, 4
+    la $a0, debug_newline_str
+    syscall
+    
+    # Restore registers and stack
+    lw $s4, 0($sp)
+    lw $s5, 4($sp)
+    addi $sp, $sp, 8
+    
+    jr $ra
 
-    # Setup core registers for main loop
-    li $s0, 0                       # $s0 = match_found_flag = 0
-    lw $s1, GRID_WIDTH              # $s1 = 6 (W)
-    lw $s2, GRID_HEIGHT             # $s2 = 18 (H)
-    la $s3, GAME_GRID               # $s3 = &GAME_GRID
-    lw $s4, EMPTY_COLOR             # $s4 = 0
-    li $s5, 0                       # $s5 = Y = 0
+# ---------------------------------------------------------
+# Check_For_Matches
+# Scan GAME_GRID for 3+ in a row (H, V, D). Returns 1 if a match was found.
+# ---------------------------------------------------------
+Check_For_Matches:
+    # Save $ra and used $s registers
+    addi $sp, $sp, -32
+    sw $ra, 28($sp)
+    sw $s0, 24($sp) # $s0 = match_found_flag
+    sw $s1, 20($sp) # $s1 = W
+    sw $s2, 16($sp) # $s2 = H
+    sw $s3, 12($sp) # $s3 = &GAME_GRID
+    sw $s4, 8($sp)  # $s4 = EMPTY_COLOR
+    sw $s5, 4($sp)  # $s5 = Y loop counter
+    sw $s6, 0($sp)  # $s6 = X loop counter
 
+    li $s0, 0                    # $s0 = match_found_flag = 0
+    lw $s1, GRID_WIDTH           # $s1 = W (6)
+    lw $s2, GRID_HEIGHT          # $s2 = 18 (H)
+    la $s3, GAME_GRID            # $s3 = &GAME_GRID
+    lw $s4, EMPTY_COLOR          # $s4 = 0
+    li $s5, 0                    # $s5 = Y = 0
+    
 MatchYLoop:
-    beq $s5, $s2, MatchLoopEnd      # if Y == 18, end outer loop
-    li $s6, 0                       # $s6 = X = 0
-
+    beq $s5, $s2, MatchLoopEnd   # if Y == 18, end outer loop
+    
+    li $s6, 0                    # $s6 = X = 0
 MatchXLoop:
-    beq $s6, $s1, NextY_Match       # if X == 6, end inner loop
+    beq $s6, $s1, NextY_Match    # if X == 6, end inner loop
 
     # Check if the starting gem is empty. If so, skip all checks for this (X,Y)
     # Index = Y * W + X
     mul $t0, $s5, $s1
     add $t1, $t0, $s6
     sll $t2, $t1, 2
-    add $t3, $s3, $t2
-    
-    # checking if pixel is empty
+    add $t3, $s3, $t2            # $t3 = &GAME_GRID[Y][X]
     lw $t4, 0($t3)
-    beq $t4, $s4, NextX_Match       # If Color is EMPTY, skip
-    
-    # storing first column's color to fix overwrite issue
+    beq $t4, $s4, NextX_Match    # If Color is EMPTY, skip
+
+    # --- DEBUG PRINT 1: Coordinates and Color ---
     addi $sp, $sp, -4
-    sw $t4, 0($sp)                  # Save current Color (C0)
-    
-    lw $t4, 0($sp)                  # Restore $t4 (C0)
-    addi $sp, $sp, 4                # Restore $sp
+    sw $t4, 0($sp) # Save current Color (C0)
+    li $v0, 4
+    la $a0, debug_match_check_str
+    syscall # Print "Checking cell ("
+    li $v0, 1
+    move $a0, $s6 # $s6 = X
+    syscall
+    li $v0, 4
+    la $a0, debug_comma_str # Print ", "
+    syscall
+    li $v0, 1
+    move $a0, $s5 # $s5 = Y
+    syscall
+    li $v0, 4
+    la $a0, debug_color_str # Print "): Color "
+    syscall
+    li $v0, 1
+    lw $a0, 0($sp) # Restore and print Color (C0)
+    syscall
+    li $v0, 4
+    la $a0, debug_newline_str # Print "\n"
+    syscall
+    lw $t4, 0($sp) # Restore $t4 (C0)
+    addi $sp, $sp, 4
+    # ------------------------------------------
 
     # Set up start X for Check_Direction
-    move $s7, $s6                   # $s7 = Current X (save it once)
-    
+    move $s7, $s6                 # $s7 = Current X (required input)
+
+    # --- 1. Check Vertical (dx=0, dy=1). Only check if Y <= 15
     li $t0, 15
-    bgt $s5, $t0, Skip_Check_Vertical    # If Y > 15, skip this check
-    
+    bgt $s5, $t0, Skip_Check_Vertical
+
     # Call Check_Direction for Vertical
-    li $a0, 0                       # dX = 0
-    li $a1, 1                       # dY = 1
-    move $a2, $s5                   # $a2 = Current Y
+    li $a0, 0                     # dX = 0
+    li $a1, 1                     # dY = 1
+    move $a2, $s5                 # $a2 = Current Y
     jal Check_Direction
-    
-    # # --- DEBUG: Print $v0 (Expected to be 1 if match occurred) ---
-    # move $t9, $v0      # Save the return value in a temporary register
-    # li $v0, 1
-    # move $a0, $t9
-    # syscall
-    # li $v0, 4
-    # la $a0, newline
-    # syscall
-    # # --- END DEBUG ---
-    
-    # move $v0, $t9      # Restore the return value to $v0 before ORing
-    
-    or $s0, $s0, $v0                 # Update match_found_flag
+    or $s0, $s0, $v0              # $s0 |= match_found (if 1, a match was cleared)
     
 Skip_Check_Vertical:
+
+    # --- 2. Check Horizontal (dx=1, dy=0). Check if X <= 3
     li $t0, 3
-    bgt $s7, $t0, Skip_Check_Horizontal  # If X > 3, skip this check
-    
+    bgt $s7, $t0, Skip_Check_Horizontal
+
     # Call Check_Direction for Horizontal
-    li $a0, 1                       # dX = 1
-    li $a1, 0                       # dY = 0
-    move $a2, $s5                   # $a2 = Current Y
+    li $a0, 1                     # dX = 1
+    li $a1, 0                     # dY = 0
+    move $a2, $s5                 # $a2 = Current Y
     jal Check_Direction
     or $s0, $s0, $v0
     
 Skip_Check_Horizontal:
-    # --- 3. Check Diagonal Down-Right (dx=1, dy=1). Check if X <= 3 AND Y <= 15 (FIXED)
+
+    # --- 3. Check Diagonal Down-Right (dx=1, dy=1). Check if X <= 3 AND Y <= 15
     li $t0, 3
-    bgt $s7, $t0, Skip_Check_DR      # If X > 3, skip
-    li $t1, 15                      # Y limit is 15 (18 rows total)
-    bgt $s5, $t1, Skip_Check_DR      # If Y > 15, skip
-    
+    bgt $s7, $t0, Skip_Check_DR   # If X > 3, skip
+    li $t1, 15
+    bgt $s5, $t1, Skip_Check_DR   # If Y > 15, skip
+
     # Call Check_Direction for Diagonal Down-Right
-    li $a0, 1                       # dX = 1
-    li $a1, 1                       # dY = 1
-    move $a2, $s5                   # $a2 = Current Y
+    li $a0, 1                     # dX = 1
+    li $a1, 1                     # dY = 1
+    move $a2, $s5                 # $a2 = Current Y
     jal Check_Direction
     or $s0, $s0, $v0
     
 Skip_Check_DR:
-    # --- 4. Check Diagonal Down-Left (dx=-1, dy=1). Check if X >= 2 AND Y <= 15 (FIXED)
+
+    # --- 4. Check Diagonal Down-Left (dx=-1, dy=1). Check if X >= 2 AND Y <= 15
     li $t0, 2
-    blt $s7, $t0, Skip_Check_DL      # If X < 2, skip
-    li $t1, 15                      # Y limit is 15 (18 rows total)
-    bgt $s5, $t1, Skip_Check_DL      # If Y > 15, skip
-    
+    blt $s7, $t0, Skip_Check_DL   # If X < 2, skip
+    li $t1, 15
+    bgt $s5, $t1, Skip_Check_DL   # If Y > 15, skip
+
     # Call Check_Direction for Diagonal Down-Left
-    li $a0, -1                      # dX = -1
-    li $a1, 1                       # dY = 1
-    move $a2, $s5                   # $a2 = Current Y
+    li $a0, -1                    # dX = -1
+    li $a1, 1                     # dY = 1
+    move $a2, $s5                 # $a2 = Current Y
     jal Check_Direction
     or $s0, $s0, $v0
     
 Skip_Check_DL:
-
+    
 NextX_Match:
-    # Check if a match was found in this cell's checks.
-    # bnez $s0, Restart_Match_Scan
-    addi $s6, $s6, 1                 # X++ if no match found
+    addi $s6, $s6, 1
     j MatchXLoop
 
 NextY_Match:
-    addi $s5, $s5, 1                 # Y++ if no match found
+    addi $s5, $s5, 1
     j MatchYLoop
 
-Restart_Match_Scan:
-    # Reset loop counters
-    li $s5, 0                       # Y = 0
-    li $s6, 0                       # X = 0
-    # li $s0, 0                       # Reset match flag
-    j MatchYLoop                    # Go back to the start of the Y loop
-    
 MatchLoopEnd:
-    move $v0, $s0                   # Return match_found_flag in $v0
 
-    # Restore registers (Corrected: 36 bytes)
-    lw $s7, 0($sp)
-    lw $s6, 4($sp)
-    lw $s5, 8($sp)
-    lw $s4, 12($sp)
-    lw $s3, 16($sp)
-    lw $s2, 20($sp)
-    lw $s1, 24($sp)
-    lw $s0, 28($sp)
-    lw $ra, 32($sp)
-    addi $sp, $sp, 36            
+    move $v0, $s0                 # Return match_found_flag
+
+Check_Done:
+    # Restore registers and stack
+    lw $s6, 0($sp)
+    lw $s5, 4($sp)
+    lw $s4, 8($sp)
+    lw $s3, 12($sp)
+    lw $s2, 16($sp)
+    lw $s1, 20($sp)
+    lw $s0, 24($sp)
+    lw $ra, 28($sp)
+    addi $sp, $sp, 32
     jr $ra
 
-Check_Direction: 
+# ---------------------------------------------------------
+# Check_Direction
+# Arguments: $a0=dX, $a1=dY, $a2=startY (all grid coords)
+# Returns: $v0 = 1 if a match was cleared, 0 otherwise.
+# ---------------------------------------------------------
+Check_Direction:
     # Save $ra and used $s registers ($s0, $s1, $s2, $s3)
-    addi $sp, $sp, -20             # Allocate 5 words (20 bytes)
+    addi $sp, $sp, -20 # Allocate 5 words (20 bytes)
     sw $ra, 16($sp)
-    sw $s0, 12($sp)                # $s0 will hold &GAME_GRID
-    sw $s1, 8($sp)                 # $s1 will hold Address 1
-    sw $s2, 4($sp)                 # $s2 will hold Address 2
-    sw $s3, 0($sp)                 # $s3 will hold Address 0
-
-    li $v0, 0                      # Default return value: 0 (No match cleared)
+    sw $s0, 12($sp) # $s0 will hold &GAME_GRID
+    sw $s1, 8($sp)  # $s1 will hold Address 1
+    sw $s2, 4($sp)  # $s2 will hold Address 2
+    sw $s3, 0($sp)  # $s3 will hold Address 0
+    
+    li $v0, 0 # Default return value: 0 (No match cleared)
 
     # Setup constants/variables
-    lw $t0, GRID_WIDTH             # $t0 = W (6)
-    la $s0, GAME_GRID              # $s0 = &GAME_GRID (FIXED BASE ADDRESS)
-    lw $t2, EMPTY_COLOR            # $t2 = EMPTY (0)
-    
-    move $t3, $s7                  # $t3 = X (start X)
-    move $t4, $a2                  # $t4 = Y (start Y)
-    
+    lw $t0, GRID_WIDTH # $t0 = W (6)
+    la $s0, GAME_GRID  # $s0 = &GAME_GRID
+    lw $t2, EMPTY_COLOR# $t2 = EMPTY (0)
+    move $t3, $s7      # $t3 = X (start X)
+    move $t4, $a2      # $t4 = Y (start Y)
+
     # --- GEM 0: (X, Y) ---
     # BOUNDS CHECK for Gem 0
     blt $t3, $zero, DirEnd_NoMatch
     bge $t3, $t0, DirEnd_NoMatch
     blt $t4, $zero, DirEnd_NoMatch
-    lw $t9, GRID_HEIGHT            
+    lw $t9, GRID_HEIGHT
     bge $t4, $t9, DirEnd_NoMatch
     
-    mul $t6, $t4, $t0              # $t6 = Y * W
-    add $t6, $t6, $t3              # $t6 = Index 0
+    mul $t6, $t4, $t0 # $t6 = Y * W
+    add $t6, $t6, $t3 # $t6 = Index 0 (Cell Index)
     sll $t6, $t6, 2
-    add $s3, $s0, $t6              # $s3 = Address 0 (NEW: Saved in $s3)
-    lw $t8, 0($s3)                 # $t8 = Color 0 (C0)
-    
-    move $t5, $t8                  # Save C0's color to $t5 for comparison.
-    
-    beq $t8, $t2, DirEnd_NoMatch   # If C0 is empty, no match possible.
-    
+    add $s3, $s0, $t6 # $s3 = Address 0
+    lw $t8, 0($s3)    # $t8 = Color 0 (C0)
+    move $t5, $t8     # Save C0's color to $t5 for comparison.
+    beq $t8, $t2, DirEnd_NoMatch # If C0 is empty, no match possible.
+
     # --- GEM 1: (X+dX, Y+dY) ---
-    add $t3, $t3, $a0              # X = X + dX
-    add $t4, $t4, $a1              # Y = Y + dY
+    add $t3, $t3, $a0 # X = X + dX
+    add $t4, $t4, $a1 # Y = Y + dY
     
     # BOUNDS CHECK for Gem 1
     blt $t3, $zero, DirEnd_NoMatch
@@ -1237,17 +1268,16 @@ Check_Direction:
     lw $t9, GRID_HEIGHT
     bge $t4, $t9, DirEnd_NoMatch
     
-    mul $t6, $t4, $t0              # $t6 = Y * W
-    add $t6, $t6, $t3              # $t6 = Index 1
+    mul $t6, $t4, $t0 # $t6 = Y * W
+    add $t6, $t6, $t3 # $t6 = Index 1
     sll $t6, $t6, 2
-    add $s1, $s0, $t6              # $s1 = Address 1 (Saved in $s1)
-    lw $t8, 0($s1)                 # $t8 = Color 1 (C1)
-    
-    bne $t8, $t5, DirEnd_NoMatch   # Compare C1 ($t8) with C0 ($t5)
-    
+    add $s1, $s0, $t6 # $s1 = Address 1 (NEW: Saved in $s1)
+    lw $t8, 0($s1)    # $t8 = Color 1 (C1)
+    bne $t8, $t5, DirEnd_NoMatch # Compare C1 ($t8) with C0 ($t5)
+
     # --- GEM 2: (X+2dX, Y+2dY) ---
-    add $t3, $t3, $a0              # X = X + dX
-    add $t4, $t4, $a1              # Y = Y + dY
+    add $t3, $t3, $a0 # X = X + dX
+    add $t4, $t4, $a1 # Y = Y + dY
     
     # BOUNDS CHECK for Gem 2
     blt $t3, $zero, DirEnd_NoMatch
@@ -1257,98 +1287,52 @@ Check_Direction:
     lw $t9, GRID_HEIGHT
     bge $t4, $t9, DirEnd_NoMatch
     
-    mul $t6, $t4, $t0              # $t6 = Y * W
-    add $t6, $t6, $t3              # $t6 = Index 2
+    mul $t6, $t4, $t0 # $t6 = Y * W
+    add $t6, $t6, $t3 # $t6 = Index 2
     sll $t6, $t6, 2
-    add $s2, $s0, $t6              # $s2 = Address 2 (Saved in $s2)
-    lw $t8, 0($s2)                 # $t8 = Color 2 (C2)
+    add $s2, $s0, $t6 # $s2 = Address 2 (NEW: Saved in $s2)
+    lw $t8, 0($s2)    # $t8 = Color 2 (C2)
     
     # Compare C2 with C0 (now in $t5)
-    bne $t8, $t5, DirEnd_NoMatch   # Compare C2 ($t8) with C0 ($t5)
-MatchFound:
-    addi $sp, $sp, -12
-    sw $t3, 8($sp)  # Save X
-    sw $t4, 4($sp)  # Save Y
-    sw $t6, 0($sp)  # Save Index (Byte Offset)
-    
-    # --- DEBUG PRINT: Match CONFIRMED and CLEARED ---
-    move $t9, $v0   # save match result
-    li $v0, 4
-    la $a0, debug_match_clear_str  
-    syscall                         # Print "!!! MATCH FOUND and CLEARED starting at ("
-    move $v0, $t9  # save match result
-    
-    move $t9, $v0   # save match result
-    li $v0, 1
-    move $a0, $s7                   # Print START X
-    syscall
-    move $v0, $t9   # save match result
-    
-    move $t9, $v0   # save match result
-    li $v0, 4
-    la $a0, comma         
-    syscall
-    move $v0, $t9
-    
-    move $t9, $v0   # save match result
-    li $v0, 1
-    move $a0, $a2                   # Print START Y
-    syscall
-    move $v0, $t9
-    
-    move $t9, $v0   # save match result
-    li $v0, 4
-    la $a0, debug_closing_str       
-    syscall
-    move $v0, $t9
-    
-    # Clear the three gems using dedicated $s registers
-    sw $t2, 0($s3)                 # Clear Gem 0
-    sw $t2, 0($s1)                 # Clear Gem 1
-    sw $t2, 0($s2)                 # Clear Gem 2
+    bne $t8, $t5, DirEnd_NoMatch # Compare C2 ($t8) with C0 ($t5)
+# ------------------------------------------------------------------
 
-    # Restore the 12 bytes allocated for temp registers ($t3, $t4, $t6)
-    move $t9, $v0 
-    # jal Print_Grid_Contents 
-    move $v0, $t9 
-    
-    addi $sp, $sp, 12
-    
-    li $v0, 1 
-    
-    # debugging
-    move $t9, $v0
-    li $v0, 4
-    la $a0, debug_after_match
-    syscall
-    move $v0, $t9
-    
+# The following lines related to match clearing (the EraseMatch functionality 
+# the user wished to remove) have been commented out.
 
-    li $v0, 1          # <-- Set return value to 1 LAST
-    j CD_Return        # <-- Jump to unified return
+# --- DEBUG PRINT: Match CONFIRMED and CLEARED ---
+# li $v0, 4
+# la $a0, debug_match_clear_str
+# syscall # Print "!!! MATCH FOUND and CLEARED starting at ("
+# li $v0, 1
+# move $a0, $s7 # Print START X
+# syscall
+# li $v0, 4
+# la $a0, debug_comma_str
+# syscall
+# li $v0, 1
+# move $a0, $a2 # Print START Y
+# syscall
+# li $v0, 4
+# la $a0, debug_closing_str
+# syscall
 
+# --- Match Found (C0 == C1 == C2 and C0 != EMPTY) ---
+li $v0, 1 # Set return value to 1 (Match found)
+
+# Clear the three gems using dedicated $s registers
+# sw $t2, 0($s3) # Clear Gem 0
+# sw $t2, 0($s1) # Clear Gem 1
+# sw $t2, 0($s2) # Clear Gem 2
+
+# CRITICAL DEBUG STEP: Check grid state immediately after clearing.
+# jal Print_Grid_Contents
 DirEnd_NoMatch:
-    li $v0, 0
-   
-CD_Return:
-    # restore all registers
-    lw $s3, 0($sp)
-    lw $s2, 4($sp)
-    lw $s1, 8($sp)
-    lw $s0, 12($sp)
-    lw $ra, 16($sp)
-    addi $sp, $sp, 20
+    # Restore registers and stack (5 words / 20 bytes)
+    lw $s3, 0($sp) # Restore $s3
+    lw $s2, 4($sp) # Restore $s2
+    lw $s1, 8($sp) # Restore $s1
+    lw $s0, 12($sp) # Restore $s0
+    lw $ra, 16($sp) # Restore $ra
+    addi $sp, $sp, 20 # Restore stack pointer
     jr $ra
-# DirEnd_NoMatch:
-    # # --- Match Found (C0 == C1 == C2 and C0 != EMPTY) ---
-    # li $v0, 1                      # Set return value to 1
-    
-    # # Restore registers and stack (5 words / 20 bytes)
-    # lw $s3, 0($sp)                 # Restore $s3
-    # lw $s2, 4($sp)                 # Restore $s2
-    # lw $s1, 8($sp)                 # Restore $s1
-    # lw $s0, 12($sp)                # Restore $s0
-    # lw $ra, 16($sp)                # Restore $ra
-    # addi $sp, $sp, 20              # Restore stack pointer
-    
-    # jr $ra
