@@ -57,42 +57,11 @@ currCol2:      .word 0                  # Bottom gem colour
 currColX:      .word 2                  # Column X position 
 currColY:      .word 1                  # Column Y position 
 
-debug_currX:    .asciiz "currColX: "
-debug_currY:    .asciiz " currColY: "
 newline:  .asciiz "\n"
-debug_msg: .asciiz " match found"
-color_label: .asciiz ") Color: "
-debug_msg_resetY: .asciiz "Y reset to: "
-debug_msg_currY: .asciiz "currColY IN drawCurrCol:"
-debug_msg_lockY:  .asciiz "currColY before lock: "
-debug_msg_loop: .asciiz "debug_msg_loop "
+debug_msg_resetY: .asciiz "yo "
 comma: .asciiz ", "
 space: .asciiz " "
-debug_msg_lock: .asciiz "Locking color: "
-lock_start_msg: .asciiz "--- LOCK START ---\n"
-lock_gem_msg:   .asciiz "Locking Gem: GridX="
-lock_gridy_msg: .asciiz " GridY="
-lock_color_msg: .asciiz " Color="
-lock_addr_msg:  .asciiz " Addr="
-debug_match_found_msg: .asciiz "--- MATCH FOUND. Grid state after clearing (before gravity): ---\n"
-debug_match_check_str:  .asciiz "match loop entered"
-debug_color_str:        .asciiz "): Color "
 debug_match_clear_str:  .asciiz "!!! MATCH FOUND and CLEARED starting at ("
-debug_closing_str:      .asciiz ")\n"
-debug_before_gravity:   .asciiz "--- DEBUG: BEFORE Apply_Gravity ---\n"
-    debug_after_gravity:    .asciiz "--- DEBUG: AFTER Apply_Gravity ---\n"
-debug_gravity_base_str: .asciiz "Gravity Start"
-    debug_gravity_move_str: .asciiz "--- GRAVITY MOVE: "
-    debug_Y_Src:            .asciiz "Y_Src="
-    debug_Y_Dst:            .asciiz " Y_Dst="
-    debug_SrcAddr:          .asciiz " SrcAddr=0x"
-    debug_DstAddr:          .asciiz " DstAddr=0x"
-    debug_gravity_start_str: .asciiz " gravity start"
-    debug_rowcol_color_str: .asciiz " row color: "
-    debug_gravity_end_str: .asciiz " gravity end"
-    debug_gem2_xy_str:   .asciiz "DBG GEM 2 X,Y: ("
-    debug_gem2_index_str: .asciiz "), Index (Byte Offset): "
-    debug_gem2_addr_str:  .asciiz ", Address: 0x"
     debug_after_match: .asciiz "after matched"
 ##############################################################################
 # Code
@@ -796,91 +765,6 @@ Lock_Done:
     lw $ra, 8($sp)
     addi $sp, $sp, 12
     jr $ra
-
-# Apply_Gravity:
-    # # Save $ra and all used $s registers
-    # addi $sp, $sp, -36
-    # sw $ra, 32($sp)
-    # sw $s0, 28($sp)
-    # sw $s1, 24($sp)
-    # sw $s2, 20($sp)
-    # sw $s3, 16($sp)
-    # sw $s4, 12($sp)
-    # sw $s5, 8($sp)
-    # sw $s6, 4($sp)
-    
-    # # Setup initial registers
-    # li $s0, 0                   # moved_flag
-    # lw $s1, GRID_WIDTH          # WIDTH
-    # # add $s1, $s1, -1            
-    # la $s2, GAME_GRID           # &GAME_GRID
-    # lw $s3, EMPTY_COLOR         # EMPTY_COLOR
-
-    # li $s4, 0                   # X = 0 (column loop)
-# ColLoop_Gravity:
-    # beq $s4, $s1, GravityEnd
-
-    # li $s6, -1                  # drop_target_Y
-    # lw $t0, GRID_HEIGHT
-    # addi $t0, $t0, -2
-    # move $s5, $t0               # Y = HEIGHT-1
-
-# RowLoop_Gravity:
-    # blt $s5, $zero, NextCol_Gravity
-
-    # # Compute index and addresses
-    # mul $t0, $s5, $s1           # t0 = Y*WIDTH
-    # add $t1, $t0, $s4           # Index
-    # sll $t2, $t1, 2
-    # add $t3, $s2, $t2           # &GAME_GRID[Y][X]
-    # lw $t4, 0($t3)              # Color at [Y][X]
-
-    # # If empty, update drop_target_Y
-    # beq $t4, $s3, GemIsEmpty
-
-    # # If colored gem and drop target exists, move it
-    # blt $s6, $zero, NextRow_Gravity
-
-    # # Compute destination index and address
-    # mul $t5, $s6, $s1
-    # add $t6, $t5, $s4           # Index_Dst
-    # sll $t7, $t6, 2
-    # add $t8, $s2, $t7           # &GAME_GRID[drop_target_Y][X]
-
-    # # Move gem
-    # sw $t4, 0($t8)              # dst = color
-    # sw $s3, 0($t3)              # src = EMPTY
-
-    # li $s0, 1                   # Mark something moved
-    # # move $s6, $s5               # Update drop_target_Y
-    # addi $s6, $s6, -1
-
-    # j NextRow_Gravity
-
-# GemIsEmpty:
-    # move $s6, $s5               # Update drop_target_Y
-# NextRow_Gravity:
-    # addi $s5, $s5, -1
-    # j RowLoop_Gravity
-
-# NextCol_Gravity:
-    # addi $s4, $s4, 1
-    # j ColLoop_Gravity
-
-# GravityEnd:
-    # move $v0, $s0               # Return moved_flag
-
-    # # Restore registers
-    # lw $s6, 4($sp)
-    # lw $s5, 8($sp)
-    # lw $s4, 12($sp)
-    # lw $s3, 16($sp)
-    # lw $s2, 20($sp)
-    # lw $s1, 24($sp)
-    # lw $s0, 28($sp)
-    # lw $ra, 32($sp)
-    # addi $sp, $sp, 36
-    # jr $ra
     
 Apply_Gravity:
     # Save $ra and all used $s registers
@@ -1099,18 +983,6 @@ MatchXLoop:
     li $a1, 1                       # dY = 1
     move $a2, $s5                   # $a2 = Current Y
     jal Check_Direction
-    
-    # # --- DEBUG: Print $v0 (Expected to be 1 if match occurred) ---
-    # move $t9, $v0      # Save the return value in a temporary register
-    # li $v0, 1
-    # move $a0, $t9
-    # syscall
-    # li $v0, 4
-    # la $a0, newline
-    # syscall
-    # # --- END DEBUG ---
-    
-    # move $v0, $t9      # Restore the return value to $v0 before ORing
     
     or $s0, $s0, $v0                 # Update match_found_flag
     
@@ -1339,16 +1211,3 @@ CD_Return:
     lw $ra, 16($sp)
     addi $sp, $sp, 20
     jr $ra
-# DirEnd_NoMatch:
-    # # --- Match Found (C0 == C1 == C2 and C0 != EMPTY) ---
-    # li $v0, 1                      # Set return value to 1
-    
-    # # Restore registers and stack (5 words / 20 bytes)
-    # lw $s3, 0($sp)                 # Restore $s3
-    # lw $s2, 4($sp)                 # Restore $s2
-    # lw $s1, 8($sp)                 # Restore $s1
-    # lw $s0, 12($sp)                # Restore $s0
-    # lw $ra, 16($sp)                # Restore $ra
-    # addi $sp, $sp, 20              # Restore stack pointer
-    
-    # jr $ra
