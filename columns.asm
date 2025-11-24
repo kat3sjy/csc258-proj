@@ -49,6 +49,26 @@ colours:
 	.word   0x00ff00
 	.word   0x0000ff
 	.word   0xff00ff
+
+score:          .word 0              # Current player score
+chain_level:    .word 0              # Current chain multiplier (0 = no chain)
+score_color:    .word 0xffffff       # White color for score display
+
+# Digit patterns for 5x7 pixel font (0-9)
+# Each digit is 5 pixels wide, 7 pixels tall
+# 1 = pixel on, 0 = pixel off (stored as rows)
+digit_0: .byte 0b111, 0b101, 0b101, 0b101, 0b111
+digit_1: .byte 0b010, 0b110, 0b010, 0b010, 0b111
+digit_2: .byte 0b111, 0b001, 0b111, 0b100, 0b111
+digit_3: .byte 0b111, 0b001, 0b111, 0b001, 0b111
+digit_4: .byte 0b101, 0b101, 0b111, 0b001, 0b001
+digit_5: .byte 0b111, 0b100, 0b111, 0b001, 0b111
+digit_6: .byte 0b111, 0b100, 0b111, 0b101, 0b111
+digit_7: .byte 0b111, 0b001, 0b001, 0b001, 0b001
+digit_8: .byte 0b111, 0b101, 0b111, 0b101, 0b111
+digit_9: .byte 0b111, 0b101, 0b111, 0b001, 0b111
+
+digit_table: .word digit_0, digit_1, digit_2, digit_3, digit_4, digit_5, digit_6, digit_7, digit_8, digit_9
 	
 borderColour:  .word 0xc0c0c0
 currCol0:      .word 0                  # Top gem colour
@@ -63,8 +83,9 @@ comma: .asciiz ", "
 space: .asciiz " "
 debug_match_clear_str:  .asciiz "!!! MATCH FOUND and CLEARED starting at ("
     debug_after_match: .asciiz "after matched"
+debug_closing_str: .ascii ")"
 ##############################################################################
-# Code
+# Code  
 ##############################################################################
 	
 	.text
@@ -89,6 +110,7 @@ game_loop:
     
     jal Draw_Game_Grid
     jal drawCurrCol
+    jal Draw_Score
     
     # j game_loop
     b game_loop
@@ -121,30 +143,47 @@ Handle_Landing:
     
 Match_And_Fall_Loop:
 
-    # 9. Check for matches
+    # # 9. Check for matches
+    # jal Check_For_Matches
+    # move $s0, $v0      
+    
+    # # debugging if match is found
+    # move $t9, $v0
+    # li $v0, 1
+    # move $a0, $s0
+    # syscall
+    # li $v0, 4
+    # la $a0, debug_msg_resetY
+    # syscall
+    # move $v0, $t9
+    
+    # beq $s0, $zero, Skip_Gravity      
+
+    # jal Apply_Gravity
+    # move $s1, $v0                   
+
+    # or $t0, $s0, $s1
+    # beq $t0, $zero, Match_Loop_End   # If $s0|$s1 is 0, exit loop
+    
+    # # jal Print_Grid_Contents
+    # jal Draw_Game_Grid               
+    # j Match_And_Fall_Loop
+    
+    # Check for matches
     jal Check_For_Matches
     move $s0, $v0      
     
-    # debugging if match is found
-    move $t9, $v0
-    li $v0, 1
-    move $a0, $s0
-    syscall
-    li $v0, 4
-    la $a0, debug_msg_resetY
-    syscall
-    move $v0, $t9
-    
-    beq $s0, $zero, Skip_Gravity      
+    beq $s0, $zero, Skip_Gravity
 
     jal Apply_Gravity
-    move $s1, $v0                   
-
-    or $t0, $s0, $s1
-    beq $t0, $zero, Match_Loop_End   # If $s0|$s1 is 0, exit loop
+    move $s1, $v0
     
-    # jal Print_Grid_Contents
-    jal Draw_Game_Grid               
+    # Redraw everything including score
+    jal Draw_Game_Grid
+    jal Draw_Score             # <-- ADD THIS
+    
+    or $t0, $s0, $s1
+    beq $t0, $zero, Match_Loop_End
     j Match_And_Fall_Loop
     
 Skip_Gravity:
@@ -152,6 +191,8 @@ Skip_Gravity:
     beq $t0, $zero, Match_Loop_End
 
 Match_Loop_End:
+    jal Reset_Chain
+    jal Draw_Score
     b game_loop
 
 Handle_GameOver:
@@ -561,18 +602,19 @@ Check_Horizontal_Collision:
     sw $s2, 0($sp)                  # ← ADD
     
     move $s0, $a0
-    lw $s1, currColX
+    lw $s1, currColX        # display X (1..6)
+    addi $s1, $s1, -1       # CONVERT to grid X (0..5) ← UNIFY HERE
     lw $s2, currColY
     
     add $t0, $s1, $s0              # $t0 = proposed new X position
 
     # 1. Check for Wall Collision (X > 5 or X < 0)
-    li $t9, 1
-    blt $t0, $t9, H_Collision_Found     # If new X < 1, collision with left border
-    li $t9, 7
+    # li $t9, 1
+    blt $t0, $zero, H_Collision_Found     # If new X < 1, collision with left border
+    lw $t9, GRID_WIDTH
     bge $t0, $t9, H_Collision_Found     # If new X >= 7, collision with right border
 
-    addi $t0, $t0, -1
+    # addi $t0, $t0, -1
     
     # 2. Check for Gem Collision (at new X, for Y, Y+1, Y+2)
     la $t1, GAME_GRID
@@ -1141,67 +1183,25 @@ MatchFound:
     addi $sp, $sp, -12
     sw $t3, 8($sp)  # Save X
     sw $t4, 4($sp)  # Save Y
-    sw $t6, 0($sp)  # Save Index (Byte Offset)
+    sw $t6, 0($sp)  # Save Index
     
-    # --- DEBUG PRINT: Match CONFIRMED and CLEARED ---
-    move $t9, $v0   # save match result
-    li $v0, 4
-    la $a0, debug_match_clear_str  
-    syscall                         # Print "!!! MATCH FOUND and CLEARED starting at ("
-    move $v0, $t9  # save match result
-    
-    move $t9, $v0   # save match result
-    li $v0, 1
-    move $a0, $s7                   # Print START X
-    syscall
-    move $v0, $t9   # save match result
-    
-    move $t9, $v0   # save match result
-    li $v0, 4
-    la $a0, comma         
-    syscall
-    move $v0, $t9
-    
-    move $t9, $v0   # save match result
-    li $v0, 1
-    move $a0, $a2                   # Print START Y
-    syscall
-    move $v0, $t9
-    
-    move $t9, $v0   # save match result
-    li $v0, 4
-    la $a0, debug_closing_str       
-    syscall
-    move $v0, $t9
-    
-    # Clear the three gems using dedicated $s registers
+    # Clear the three gems
     sw $t2, 0($s3)                 # Clear Gem 0
     sw $t2, 0($s1)                 # Clear Gem 1
     sw $t2, 0($s2)                 # Clear Gem 2
-
-    # Restore the 12 bytes allocated for temp registers ($t3, $t4, $t6)
-    move $t9, $v0 
-    # jal Print_Grid_Contents 
-    move $v0, $t9 
     
+    # Update score: 3 gems cleared
+    jal Update_Score               # Call score update function
+    
+    lw $t6, 0($sp)
+    lw $t4, 4($sp)
+    lw $t3, 8($sp)
     addi $sp, $sp, 12
     
-    li $v0, 1 
-    
-    # debugging
-    move $t9, $v0
-    li $v0, 4
-    la $a0, debug_after_match
-    syscall
-    move $v0, $t9
-    
-
-    li $v0, 1          # <-- Set return value to 1 LAST
-    j CD_Return        # <-- Jump to unified return
-
+    li $v0, 1
+    j CD_Return
 DirEnd_NoMatch:
-    li $v0, 0
-   
+    li $v0, 0   
 CD_Return:
     # restore all registers
     lw $s3, 0($sp)
@@ -1210,4 +1210,281 @@ CD_Return:
     lw $s0, 12($sp)
     lw $ra, 16($sp)
     addi $sp, $sp, 20
+    jr $ra
+    
+    
+# Function: Update_Score
+# Updates score based on gems cleared and chain level
+# Each gem = 10 points * (1 + chain_level)
+Update_Score:
+    addi $sp, $sp, -8
+    sw $ra, 4($sp)
+    sw $t0, 0($sp)
+    
+    lw $t0, score           # Load current score
+    lw $t1, chain_level     # Load chain level
+    
+    # Calculate points: 10 * 3 gems * (1 + chain_level)
+    li $t2, 3              # Base points (10 per gem * 3 gems)
+    addi $t3, $t1, 1        # Multiplier = 1 + chain_level
+    mul $t2, $t2, $t3       # Points = base * multiplier
+    
+    add $t0, $t0, $t2       # Add to score
+    sw $t0, score           # Save new score
+    
+    # Increment chain level for next match
+    addi $t1, $t1, 1
+    sw $t1, chain_level
+    
+    lw $t0, 0($sp)
+    lw $ra, 4($sp)
+    addi $sp, $sp, 8
+    jr $ra
+
+# Function: Reset_Chain
+# Resets chain level to 0 (call when no more matches found)
+Reset_Chain:
+    sw $zero, chain_level
+    jr $ra
+
+# Function: Erase_Score_Area
+# Clears the score display area before redrawing
+Erase_Score_Area:
+    addi $sp, $sp, -8
+    sw $s0, 4($sp)
+    sw $s1, 0($sp)
+    
+    lw $s0, ADDR_DSPL       # $s0 = display base
+    li $t0, 8               # Start X (moved left, inside play area)
+    li $t1, 19              # Start Y (below the play area)
+    li $t2, 24              # Width (enough for 6 digits: 6*4=24 pixels)
+    li $t3, 6               # Height (5 pixels for digits + 1 buffer)
+    
+Erase_Score_Y_Loop:
+    beq $t3, $zero, Erase_Score_Done
+    li $t4, 0               # X counter
+    
+Erase_Score_X_Loop:
+    beq $t4, $t2, Erase_Score_Next_Y
+    
+    # Calculate display address
+    add $t5, $t0, $t4       # X position
+    sll $t6, $t1, 7         # Y * 128
+    sll $t5, $t5, 2         # X * 4
+    add $t6, $t6, $t5       # Combined offset
+    add $t6, $s0, $t6       # Final address
+    sw $zero, 0($t6)        # Clear pixel (set to black)
+    
+    addi $t4, $t4, 1
+    j Erase_Score_X_Loop
+    
+Erase_Score_Next_Y:
+    addi $t1, $t1, 1
+    addi $t3, $t3, -1
+    j Erase_Score_Y_Loop
+    
+Erase_Score_Done:
+    lw $s1, 0($sp)
+    lw $s0, 4($sp)
+    addi $sp, $sp, 8
+    jr $ra
+    
+# Function: Draw_Score
+# Draws the score as digits on the display
+# Display position: Top-right corner (X=20, Y=1)
+Draw_Score:
+    addi $sp, $sp, -24
+    sw $ra, 20($sp)
+    sw $s0, 16($sp)
+    sw $s1, 12($sp)
+    sw $s2, 8($sp)
+    sw $s3, 4($sp)
+    sw $s4, 0($sp)          # Add $s4 for power of 10
+    
+    # Clear the score area first
+    jal Erase_Score_Area
+    
+    lw $s0, score           # $s0 = score value
+    li $s1, 8               # $s1 = starting X position
+    li $s2, 19              # $s2 = Y position
+    li $s4, 100000          # $s4 = power of 10 (use $s register!)
+    move $s3, $s0           # $s3 = remaining score
+    
+Draw_Score_Loop:
+    beq $s4, $zero, Draw_Score_End    # Exit if power is 0
+    
+    # Save power before divisions
+    move $t8, $s4
+    
+    # Calculate digit = (score / power) % 10
+    div $s0, $t8
+    mflo $t2
+    li $t3, 10
+    div $t2, $t3
+    mfhi $a0                # $a0 = digit
+    
+    # Special handling for last digit (power=1)
+    li $t1, 1
+    bne $t8, $t1, Not_Last_Digit
+    # This IS the last digit - draw it and exit
+    move $a1, $s1
+    move $a2, $s2
+    jal Draw_Digit
+    j Draw_Score_End        # Exit immediately!
+    
+Not_Last_Digit:
+    # Skip leading zeros
+    beq $a0, $zero, Check_If_Leading_Zero
+    j Draw_This_Digit
+    
+Check_If_Leading_Zero:
+    li $t1, 8
+    beq $s1, $t1, Skip_Digit
+    
+Draw_This_Digit:
+    move $a1, $s1
+    move $a2, $s2
+    jal Draw_Digit
+    addi $s1, $s1, 4
+    
+Skip_Digit:
+    li $t1, 10
+    div $t8, $t1
+    mflo $s4
+    j Draw_Score_Loop
+# Draw_Score_Loop:
+    # li $t1, 1
+    # blt $s4, $t1, Draw_Score_End
+    
+    # # Calculate quotient
+    # div $s0, $s4
+    # mflo $a0                # $a0 = score / power
+    
+    # # DEBUG: Print the quotient value
+    # move $t9, $a0           # Save $a0
+    # move $t8, $v0           # Save $v0
+    # li $v0, 1
+    # move $a0, $t9
+    # syscall                 # Print quotient
+    # li $v0, 4
+    # la $a0, space
+    # syscall                 # Print space
+    # move $v0, $t8           # Restore $v0
+    # move $a0, $t9           # Restore $a0
+    
+    # # Now get just the ones digit of $a0 (0-9)
+    # li $t2, 0
+# Find_Digit_Loop:
+    # slti $t3, $a0, 10
+    # bnez $t3, Found_Digit
+    # addi $t2, $t2, 1
+    # addi $a0, $a0, -10
+    # j Find_Digit_Loop
+    
+# Found_Digit:
+    # # Draw digit
+    # move $a1, $s1
+    # move $a2, $s2
+    # jal Draw_Digit
+    
+    # # Reload score from memory (safer)
+    # lw $s0, score
+    
+    # addi $s1, $s1, 4
+Draw_Score_End:
+    lw $s4, 0($sp)
+    lw $s3, 4($sp)
+    lw $s2, 8($sp)
+    lw $s1, 12($sp)
+    lw $s0, 16($sp)
+    lw $ra, 20($sp)
+    addi $sp, $sp, 24
+    jr $ra
+
+
+# Function: Draw_Digit
+# Draws a single digit at specified position
+# Arguments: $a0 = digit (0-9), $a1 = X, $a2 = Y
+Draw_Digit:
+    addi $sp, $sp, -24
+    sw $ra, 20($sp)
+    sw $s0, 16($sp)
+    sw $s1, 12($sp)
+    sw $s2, 8($sp)
+    sw $s3, 4($sp)
+    sw $s4, 0($sp)
+    
+    # Get digit pattern address directly using branches
+    move $s0, $a0           # Save digit value
+    la $t0, digit_0
+    beq $s0, 0, Got_Digit_Addr
+    la $t0, digit_1
+    beq $s0, 1, Got_Digit_Addr
+    la $t0, digit_2
+    beq $s0, 2, Got_Digit_Addr
+    la $t0, digit_3
+    beq $s0, 3, Got_Digit_Addr
+    la $t0, digit_4
+    beq $s0, 4, Got_Digit_Addr
+    la $t0, digit_5
+    beq $s0, 5, Got_Digit_Addr
+    la $t0, digit_6
+    beq $s0, 6, Got_Digit_Addr
+    la $t0, digit_7
+    beq $s0, 7, Got_Digit_Addr
+    la $t0, digit_8
+    beq $s0, 8, Got_Digit_Addr
+    la $t0, digit_9
+Got_Digit_Addr:
+    move $s0, $t0           # $s0 = address of digit pattern
+    
+    lw $s1, ADDR_DSPL       # $s1 = display base
+    lw $s2, score_color     # $s2 = color
+    move $s3, $a2           # $s3 = current Y (0-6 for 7 rows)
+Draw_Digit_Row_Loop:
+    li $t0, 5
+    add $t1, $a2, $t0
+    bge $s3, $t1, Draw_Digit_End    # If row >= 7, done
+    
+    # Load row pattern
+    sub $t1, $s3, $a2       # Row offset
+    add $t2, $s0, $t1       # Pattern address
+    lbu $t3, 0($t2)         # $t3 = row pattern (5 bits)
+    
+    # Draw 5 pixels in this row
+    li $s4, 0               # $s4 = pixel column (0-4)
+    
+Draw_Digit_Pixel_Loop:
+    beq $s4, 3, Draw_Digit_Next_Row
+    
+    # Check if bit is set
+    li $t4, 0b100
+    srlv $t4, $t4, $s4      # Shift right by column number
+    and $t5, $t3, $t4       # Check if bit is set
+    beq $t5, $zero, Draw_Digit_Skip_Pixel
+    
+    # Calculate display address
+    add $t6, $a1, $s4       # X + column
+    sll $t7, $s3, 7         # Y * 128
+    sll $t6, $t6, 2         # X * 4
+    add $t7, $t7, $t6       # Combined offset
+    add $t7, $s1, $t7       # Final address
+    sw $s2, 0($t7)          # Draw pixel
+    
+Draw_Digit_Skip_Pixel:
+    addi $s4, $s4, 1
+    j Draw_Digit_Pixel_Loop
+    
+Draw_Digit_Next_Row:
+    addi $s3, $s3, 1
+    j Draw_Digit_Row_Loop
+    
+Draw_Digit_End:
+    lw $s4, 0($sp)
+    lw $s3, 4($sp)
+    lw $s2, 8($sp)
+    lw $s1, 12($sp)
+    lw $s0, 16($sp)
+    lw $ra, 20($sp)
+    addi $sp, $sp, 24
     jr $ra
