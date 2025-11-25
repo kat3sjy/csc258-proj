@@ -79,6 +79,8 @@ letter_O:   .byte 0b01110,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110
 letter_V:   .byte 0b10001,0b10001,0b10001,0b10001,0b01010,0b01010,0b00100
 letter_R:   .byte 0b11110,0b10001,0b10001,0b11110,0b10100,0b10010,0b10001
 
+.align 2
+
 gameOver_colour:    .word 0xffffff      # White
 	
 borderColour:  .word 0xc0c0c0
@@ -95,7 +97,7 @@ nextColX:           .word 9             # X coord for preview col
 nextColY:           .word 2             # Y coord for preview col
 
 gravity_timer:      .word 0             # ms since last automatic drop
-gravity_interval:   .word 5000          # interval between each drop
+gravity_interval:   .word 500000          # interval between each drop
 gravity_elapsed:    .word 0             # counts number of automatic drops
 gravity_increase:   .word 10            # threshold number of automatic drops before speed up
 gravity_min:        .word 750           # smallest interval between each drop (fastest gravity speed)
@@ -182,7 +184,7 @@ Skip_TimeSpeedup:
     
     jal Draw_Game_Grid
     jal drawCurrCol
-    jal Draw_Score
+    # jal Draw_Score
     
     # Sleep for 16 ms
     li $v0, 32
@@ -198,6 +200,11 @@ Handle_Landing:
     
     # Redraw full grid now that column is locked
     jal Draw_Game_Grid
+    
+    # 8. Check for game events
+    lw $t0, currColY
+    li $t1, 2
+    blt $t0, $t1, Handle_GameOver
     
     lw   $t0, nextCol0              # Replace currCol with nextCol
     sw   $t0, currCol0
@@ -218,11 +225,6 @@ Handle_Landing:
     # 7. Draw full grid + new falling column
     jal Draw_Game_Grid
     jal drawCurrCol
-
-    # 8. Check for game events
-    lw $t0, currColY
-    li $t1, 0
-    blt $t0, $t1, Handle_GameOver
     
 Match_And_Fall_Loop:
     # Check for matches
@@ -234,9 +236,9 @@ Match_And_Fall_Loop:
     jal Apply_Gravity
     move $s1, $v0
     
-    # Redraw everything including score
+    # Redraw everything 
     jal Draw_Game_Grid
-    jal Draw_Score             
+    # jal Draw_Score             
     
     or $t0, $s0, $s1
     beq $t0, $zero, Match_Loop_End
@@ -248,7 +250,7 @@ Skip_Gravity:
 
 Match_Loop_End:
     jal Reset_Chain
-    jal Draw_Score
+    # jal Draw_Score
     b game_loop
 
 # game over
@@ -439,7 +441,7 @@ clearPauseNextRow:
 clearPauseDone:
     jal  Draw_Game_Grid             # Redraw game state
     jal  drawCurrCol
-    jal  Draw_Score
+    # jal  Draw_Score
     jal  drawBorder
     
     # restore and return
@@ -1423,6 +1425,8 @@ Update_Score:
     addi $t1, $t1, 1
     sw $t1, chain_level
     
+    jal Draw_Score
+    
     lw $t0, 0($sp)
     lw $ra, 4($sp)
     addi $sp, $sp, 8
@@ -1640,6 +1644,13 @@ Draw_Digit_End:
     jr $ra
     
 Handle_GameOver:
+    move $t9, $v0
+    li $v0, 4
+    la $a0, debug_msg_resetY
+    syscall
+    move $v0, $t9
+    
+
     jal drawGameOverScreen
     jal gameOverOptions
     beq $v0, $zero, GameOver_Quit
@@ -1662,20 +1673,22 @@ GameOver_Quit:
 #                   $a2 = Y pixel
 # Return Values:    none
 drawLetter:
-    addi $sp, $sp, -32              # allocate 32 bytes on stack for saved registers
-    sw $ra, 28($sp)                 # save return address
-    sw $s0, 24($sp)                 # save registers $s0 - $s5
-    sw $s1, 20($sp)
-    sw $s2, 16($sp)
-    sw $s3, 12($sp)
-    sw $s4, 8($sp)
-    sw $s5, 4($sp)
+    addi $sp, $sp, -36              # allocate 32 bytes on stack for saved registers
+    sw $ra, 32($sp)                 # save return address
+    sw $s0, 28($sp)                 # save registers $s0 - $s5
+    sw $s1, 24($sp)
+    sw $s2, 20($sp)
+    sw $s3, 16($sp)
+    sw $s4, 12($sp)
+    sw $s5, 8($sp)
+    sw $s6, 4($sp)
+    sw $zero, 0($sp)
 
     move $s0, $a0                   # letter pattern address
     move $s1, $a1                   # base X (in pixels)
     move $s2, $a2                   # base Y (in pixels)
-    la   $s3, gameOver_colour       # $s3 = gameOver_colour
-    lw   $s3, 0($s3)                # white
+    la   $t0, gameOver_colour       # $s3 = gameOver_colour
+    lw   $s6, 0($t0)                # white
 
     li   $s4, 7                     # row count
     li   $s5, 0                     # row index
@@ -1721,7 +1734,7 @@ drawLetterBlockCol:
     add  $t2, $t2, $t3              # $t2 = $t2 + $t3 total offset
     lw   $t4, ADDR_DSPL             # $t4 = ADDR_DSPL   
     add  $t2, $t4, $t2              # $t2 = ADDR_DSPL + offset
-    sw   $s3, 0($t2)                # draw pixel at $t2
+    sw   $s6, 0($t2)                # draw pixel at $t2
 
     addi $t1, $t1, 1                # $t1 += 1
     j drawLetterBlockCol
@@ -1741,14 +1754,16 @@ drawLetterNextRow:
     j drawLetterRowLoop
 
 drawLetterEnd:
-    lw $s5, 4($sp)              # restore $s0 - $s5
-    lw $s4, 8($sp)
-    lw $s3, 12($sp)
-    lw $s2, 16($sp)
-    lw $s1, 20($sp)
-    lw $s0, 24($sp)
-    lw $ra, 28($sp)             # restore return address
-    addi $sp, $sp, 32           # fix stack
+    lw $s6, 4($sp)             
+    lw $s5, 8($sp)             
+    lw $s4, 12($sp)            
+    lw $s3, 16($sp)             
+    lw $s2, 20($sp)             
+    lw $s1, 24($sp)             
+    lw $s0, 28($sp)             
+    lw $ra, 32($sp)            
+    
+    addi $sp, $sp, 36          
     jr $ra
     
 # Function: drawGameOverScreen
