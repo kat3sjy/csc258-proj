@@ -109,7 +109,7 @@ game_loop:
     
     jal Draw_Game_Grid
     jal drawCurrCol
-    jal Draw_Score
+    # jal Draw_Score
     
     # j game_loop
     b game_loop
@@ -153,7 +153,7 @@ Match_And_Fall_Loop:
     
     # Redraw everything including score
     jal Draw_Game_Grid
-    jal Draw_Score             
+    # jal Draw_Score             
     
     or $t0, $s0, $s1
     beq $t0, $zero, Match_Loop_End
@@ -165,7 +165,7 @@ Skip_Gravity:
 
 Match_Loop_End:
     jal Reset_Chain
-    jal Draw_Score
+    # jal Draw_Score
     b game_loop
 
 Handle_GameOver:
@@ -1190,13 +1190,15 @@ Update_Score:
     add $t0, $t0, $t2       # Add to score
     sw $t0, score           # Save new score
     
+    jal Draw_Score
+    
     # Increment chain level for next match
     addi $t1, $t1, 1
     sw $t1, chain_level
     
     lw $t0, 0($sp)
     lw $ra, 4($sp)
-    addi $sp, $sp, 8
+    addi $sp, $sp, 8    
     jr $ra
 
 # Function: Reset_Chain
