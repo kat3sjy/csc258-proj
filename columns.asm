@@ -118,19 +118,19 @@ debug_closing_str: .ascii ")"
     # Run the game.
 main:    
     # Initialize the game
-    jal drawBorder
-    jal drawCol
-    lw   $t0, nextCol0
-    sw   $t0, currCol0
-    lw   $t0, nextCol1
-    sw   $t0, currCol1
-    lw   $t0, nextCol2
-    sw   $t0, currCol2
-    li   $t0, 2
-    sw   $t0, currColX
-    li   $t0, 1
-    sw   $t0, currColY
-    jal  drawCurrCol
+    jal drawBorder                  # Draw game border
+    jal drawCol                     # Draw initial column
+    lw $t0, nextCol0                # $t0 = preview column
+    sw $t0, currCol0                # $t0 = current column
+    lw $t0, nextCol1
+    sw $t0, currCol1
+    lw $t0, nextCol2
+    sw $t0, currCol2
+    li $t0, 2
+    sw $t0, currColX
+    li $t0, 1
+    sw $t0, currColY
+    jal drawCurrCol
     jal drawCol
     
 game_loop:       
@@ -138,43 +138,41 @@ game_loop:
     jal CheckKeyboardInput
 
     # Gravity
-    lw $t0, gravity_timer
-    addi $t0, $t0, 1
+    lw $t0, gravity_timer                   # $t0 = gravity_timer
+    addi $t0, $t0, 1                        # $t0 += 1
     sw $t0, gravity_timer
-    lw  $t1, gravity_interval
-    blt $t0, $t1, Skip_Gravity
+    lw  $t1, gravity_interval               # $t1 = gravity_intervak
+    blt $t0, $t1, Skip_Gravity              # if $t0 < $t1, skip gravity loop
     
-    # increment total elapsed ms (time-based speedup)
-    lw   $t6, gravity_elapsed
-    addi $t6, $t6, 1
+    lw   $t6, gravity_elapsed               # $t6 = gravity_elapsed
+    addi $t6, $t6, 1                        # $t6 += 1
     sw   $t6, gravity_elapsed
 
-    lw   $t7, gravity_increase
-    blt  $t6, $t7, Skip_TimeSpeedup
+    lw   $t7, gravity_increase              # $t7 = gravity_increase
+    blt  $t6, $t7, Skip_TimeSpeedup         # if $t6 < $t7, skip speedup
 
     # Time to level up: decrease gravity_interval and reset elapsed counter
-    lw   $t2, gravity_interval
-    lw   $t3, gravity_decrement
-    sub  $t4, $t2, $t3
-    lw   $t5, gravity_min
-    blt  $t4, $t5, SetIntervalMinTime
+    lw   $t2, gravity_interval              # $t2 = gravity_interval
+    lw   $t3, gravity_decrement             # $t3 = gravity_decrement
+    sub  $t4, $t2, $t3                      # $t4 = $t2 - $t3
+    lw   $t5, gravity_min                   # $t5 = gravity_min
+    blt  $t4, $t5, SetIntervalMinTime       # if $t4 < $t5, set interval minimum
 
-    sw   $t4, gravity_interval
+    sw   $t4, gravity_interval              
     j    ResetElapsed
     
 SetIntervalMinTime:
-    sw   $t5, gravity_interval
+    sw   $t5, gravity_interval              # reset gravity_interval
 
 ResetElapsed:
-    sw   $zero, gravity_elapsed
+    sw   $zero, gravity_elapsed             # reset gravity elapsed time to 0
 
 Skip_TimeSpeedup:
+    jal Check_Vertical_Collision            # check vertical collision
+    beq $v0, 1, Handle_Landing              # if $v0 = 1, land piece
     
-    jal Check_Vertical_Collision
-    beq $v0, 1, Handle_Landing
-    
-    jal moveCurrDown
-    sw $zero, gravity_timer
+    jal moveCurrDown                        # automatic drop
+    sw $zero, gravity_timer                 # reset gravity timer to 0
 
     # 2. Check for Vertical Collision (Landing)
     jal Check_Vertical_Collision
@@ -201,18 +199,18 @@ Handle_Landing:
     # Redraw full grid now that column is locked
     jal Draw_Game_Grid
     
-    lw   $t0, nextCol0
+    lw   $t0, nextCol0              # Replace currCol with nextCol
     sw   $t0, currCol0
     lw   $t0, nextCol1
     sw   $t0, currCol1
     lw   $t0, nextCol2
     sw   $t0, currCol2
-    # 5. Spawn new falling column immediately
-    li $t0, 2           # starting X (column spawn)
+
+    li $t0, 2                       # starting X coord
     sw $t0, currColX
-    li $t0, 1           # starting Y (top of screen)
+    li $t0, 1                       # starting Y coord
     sw $t0, currColY
-    sw $zero, gravity_timer
+    sw $zero, gravity_timer         # set gravity_timer to 0
 
     # 6. Generate new column and draw it
     jal drawCol
@@ -227,7 +225,6 @@ Handle_Landing:
     blt $t0, $t1, Handle_GameOver
     
 Match_And_Fall_Loop:
-    
     # Check for matches
     jal Check_For_Matches
     move $s0, $v0      
@@ -270,6 +267,7 @@ CheckKeyInput:
     beq $t2, 0x73, respondToS          # Check if the key S was pressed
     beq $t2, 0x64, respondToD          # Check if the key D was pressed
     beq $t2, 0x71, respondToQ          # Check if the key Q was pressed
+    beq $t2, 0x70, respondToP          # Check if the key P was pressed 
     jr $ra
 
 respondToW:
@@ -316,63 +314,195 @@ respondToQ:
     li $v0, 10                         # Quit game
     syscall
 
-    # jr $ra
+respondToP:
+    addi $sp, $sp, -8
+    sw $ra, 4($sp)
+    
+    jal pauseRoutine
+    lw $ra, 4($sp)
+    addi $sp, $sp, 8
+    jr $ra
+
+pauseRoutine:
+    addi $sp, $sp, -12
+    sw $ra, 8($sp)
+    sw $s0, 4($sp)
+    sw $s1, 0($sp)
+    lw $t0, ADDR_DSPL                   # $t0 = ADDR_DSPL
+    lw $t1, borderColour                # pause overlay colour (same as border)  
+    
+    # Left rectangle positions
+    li $t2, 5                           # Starting Y coord
+    li $t3, 13                          # Ending Y coord
+    li $t4, 12                          # Starting X coord
+    li $t5, 14                          # Ending X coord
+
+pauseRoutineLeftRow:
+    beq $t2, $t3, pauseRoutineLeftRowEnd
+    sll $t6, $t2, 7                     # left row = y * 128
+    move $t7, $t4                       # x counter
+
+pauseRoutineLeftCol:
+    beq $t7, $t5, pauseRoutineLeftColEnd
+    sll $t8, $t7, 2                     # x * 4
+    add $t9, $t6, $t8                   # left col + x * 4
+    add $t9, $t0, $t9                   # final addr = ADDR_DSPL + offset
+    sw $t1, 0($t9)                      # draw pixel
+    addi $t7, $t7, 1
+    j pauseRoutineLeftCol
+
+pauseRoutineLeftColEnd:
+    addi $t2, $t2, 1
+    j pauseRoutineLeftRow
+
+pauseRoutineLeftRowEnd:
+    # Right rectangle positions
+    li $t2, 5                         # Starting Y coord
+    li $t3, 13                        # Ending Y coord
+    li $t4, 16                        # Starting X coord
+    li $t5, 18                        # Ending X coord
+
+pauseRoutineRightRow:
+    beq $t2, $t3, pauseRoutineRightRowEnd
+    sll $t6, $t2, 7                    # $t6 = $t2 * 128
+    move $t7, $t4
+
+pauseRoutineRightCol:
+    beq $t7, $t5, pauseRoutineRightColEnd       # while ($t7 (current col index) != $t5 (end col)), pauseRoutineRightColEnd
+    sll $t8, $t7, 2                             # $t8 = $t7 (column index) * 4
+    add $t9, $t6, $t8                           # $t9 = $t6 (row) + $t8 (col offset)
+    add $t9, $t0, $t9                           # $t9 = $t0 + $t9, so $t9 is final address for right col
+    sw $t1, 0($t9)                              # draw pixel
+    addi $t7, $t7, 1                            # $t7 += 1 to move to next column
+    j pauseRoutineRightCol
+
+pauseRoutineRightColEnd:
+    addi $t2, $t2, 1
+    j pauseRoutineRightRow
+
+pauseRoutineRightRowEnd:
+    j pauseRoutineOverlayEnd
+    
+pauseRoutineOverlayEnd:
+    lw $t9, ADDR_KBRD
+    
+pauseRoutineStart:
+    lw $t0, 0($t9)                              # t0 = 1 if key is pressed
+    beq $t0, $zero, pauseRoutineStartDone       # if $t0 = 0, pauseRoutineStartDone
+    j pauseRoutineStart
+pauseRoutineStartDone:
+
+pauseRoutineWait:
+    li $v0, 32                                  # sleep 100 ms
+    li $a0, 100
+    syscall
+
+    lw $t0, 0($t9)                              # $t0 = 1 if pressed
+    beq $t0, 1, pauseRoutineGotKey
+    j pauseRoutineWait
+    
+pauseRoutineGotKey:
+    lw $t1, 4($t9)                              # get ascii code
+    li $t2, 0x70                                # Check if P was pressed
+    beq $t1, $t2, pauseRoutineCheck             # if $t1 = $t2, commence unpause
+    j pauseRoutineWait
+pauseRoutineCheck:
+
+pauseRoutineEnd:
+    lw $t0, 0($t9)
+    bne $t0, $zero, pauseRoutineEnd
+    lw $s0, ADDR_DSPL                           # $s0 = ADDR_DSPL
+    li $t1, 0                                   # $t1 = 0 (no colour)
+    li $t2, 4                                   # starting y 
+    li $t3, 14                                  # ending y   
+    li $t4, 6                                   # starting x 
+    li $t5, 26                                  # ending x   
+
+clearPauseRow:
+    beq  $t2, $t3, clearPauseDone
+    sll  $t6, $t2, 7                            # row = y * 128
+    move $t7, $t4                               # x = starting x
+
+clearPauseCol:
+    beq  $t7, $t5, clearPauseNextRow
+    sll  $t8, $t7, 2                        # x * 4
+    add  $t9, $t6, $t8                      # row + x * 4
+    add  $t9, $s0, $t9                      # final address = ADDR_DSPL + offset
+    sw   $t1, 0($t9)                        # clear pixel
+    addi $t7, $t7, 1
+    j    clearPauseCol
+
+clearPauseNextRow:
+    addi $t2, $t2, 1
+    j    clearPauseRow
+
+clearPauseDone:
+    jal  Draw_Game_Grid             # Redraw game state
+    jal  drawCurrCol
+    jal  Draw_Score
+    jal  drawBorder
+    
+    # restore and return
+    lw   $s1, 0($sp)
+    lw   $s0, 4($sp)
+    lw   $ra, 8($sp)
+    addi $sp, $sp, 12
+    jr   $ra
 
 drawCurrCol: 
-    lw $t0, ADDR_DSPL
+    lw $t0, ADDR_DSPL                   # $t0 = ADDR_DSPL
     lw $t1, currColX
     lw $t2, currColY
     
-    lw $t3, currCol0
+    lw $t3, currCol0                    # draw top gem
     sll $t4, $t2, 7
     sll $t5, $t1, 2
     add $t6, $t4, $t5
     add $t7, $t0, $t6
     sw $t3, 0($t7)
     
-    lw $t3, currCol1
-    addi $t8, $t2, 1
+    lw $t3, currCol1                    # draw middle gem
+    addi $t8, $t2, 1    
     sll $t4, $t8, 7
     add $t6, $t4, $t5
     add $t7, $t0, $t6
     sw $t3, 0($t7)
 
-    lw $t3, currCol2
+    lw $t3, currCol2                    # draw bottom gem
     addi $t8, $t2, 2
     sll $t4, $t8, 7
     add $t6, $t4, $t5
     add $t7, $t0, $t6
     sw $t3, 0($t7)
     
-    lw $t1, nextColX          # preview X
-    lw $t2, nextColY          # preview Y
+    lw $t1, nextColX                    # preview X coord
+    lw $t2, nextColY                    # preview Y coord
 
-    lw $t3, nextCol0
+    lw $t3, nextCol0                    
     sll $t4, $t2, 7
     sll $t5, $t1, 2
     add $t6, $t4, $t5
     add $t7, $t0, $t6
-    sw  $t3, 0($t7)
+    sw  $t3, 0($t7)                     # draw next col top gem preview
 
     lw $t3, nextCol1
     addi $t8, $t2, 1
     sll $t4, $t8, 7
     add $t6, $t4, $t5
     add $t7, $t0, $t6
-    sw  $t3, 0($t7)
+    sw  $t3, 0($t7)                     # draw next col middle gem preview
 
     lw $t3, nextCol2
     addi $t8, $t2, 2
     sll $t4, $t8, 7
     add $t6, $t4, $t5
     add $t7, $t0, $t6
-    sw  $t3, 0($t7)
+    sw  $t3, 0($t7)                     # draw next col bottom gem preview
 
     jr $ra
 
 # Function: eraseCurrCol
 eraseCurrCol:
-    
     lw $t0, ADDR_DSPL                  # Base display address
     lw $t1, currColX                   # $t1 = x of col
     lw $t2, currColY                   # $t2 = y of col
@@ -570,8 +700,6 @@ drawColLoopEnd:
     addi $sp, $sp, 4
     jr   $ra                           # Fixes all my problems
     
-    
-
 # Function: randomColour:
 randomColour:
     addi $sp, $sp, -4                  # Save register on stack
@@ -1534,19 +1662,19 @@ GameOver_Quit:
 #                   $a2 = Y pixel
 # Return Values:    none
 drawLetter:
-    addi $sp, $sp, -32
-    sw $ra, 28($sp)
-    sw $s0, 24($sp)
+    addi $sp, $sp, -32              # allocate 32 bytes on stack for saved registers
+    sw $ra, 28($sp)                 # save return address
+    sw $s0, 24($sp)                 # save registers $s0 - $s5
     sw $s1, 20($sp)
     sw $s2, 16($sp)
     sw $s3, 12($sp)
     sw $s4, 8($sp)
     sw $s5, 4($sp)
 
-    move $s0, $a0                   # pattern ptr
+    move $s0, $a0                   # letter pattern address
     move $s1, $a1                   # base X (in pixels)
     move $s2, $a2                   # base Y (in pixels)
-    la   $s3, gameOver_colour
+    la   $s3, gameOver_colour       # $s3 = gameOver_colour
     lw   $s3, 0($s3)                # white
 
     li   $s4, 7                     # row count
@@ -1562,15 +1690,15 @@ drawLetterRowLoop:
     
 drawLetterColLoop:
     li   $t3, 5
-    beq  $t2, $t3, drawLetterNextRow
+    beq  $t2, $t3, drawLetterNextRow        # if $t2 = $t3, go to next row
 
-    li   $t4, 1
-    sll  $t4, $t4, 4                # Shift Logical Left $t4
+    li   $t4, 1                     # $t4 = 1
+    sll  $t4, $t4, 4                # Shift Logical Left $t4 = $t4 * 16
     srlv $t5, $t4, $t2              # Shift Right Logical Variable $t5 = $t4 shifted by $t2
     and  $t6, $t1, $t5
     beq  $t6, $zero, drawLetterColSkip
 
-    mul  $t6, $t2, $t9              # X = baseX + col *scale
+    mul  $t6, $t2, $t9              # X = baseX + col * scale
     add  $t6, $t6, $s1
 
     mul  $t7, $s5, $t9              # Y = baseY + row * scale
@@ -1590,16 +1718,16 @@ drawLetterBlockCol:
     
     add  $t3, $t6, $t1              # $t3 (currentX) = $t6 (pixelX) + t1
     sll  $t3, $t3, 2                # $t3 * 4
-    add  $t2, $t2, $t3
-    lw   $t4, ADDR_DSPL
-    add  $t2, $t4, $t2
-    sw   $s3, 0($t2)
+    add  $t2, $t2, $t3              # $t2 = $t2 + $t3 total offset
+    lw   $t4, ADDR_DSPL             # $t4 = ADDR_DSPL   
+    add  $t2, $t4, $t2              # $t2 = ADDR_DSPL + offset
+    sw   $s3, 0($t2)                # draw pixel at $t2
 
-    addi $t1, $t1, 1
+    addi $t1, $t1, 1                # $t1 += 1
     j drawLetterBlockCol
     
 drawLetterBlockColEnd:
-    addi $t0, $t0, 1
+    addi $t0, $t0, 1                # $t0 += 1
     j drawLetterBlockRow
     
 drawLetterBlockEnd:
@@ -1613,29 +1741,29 @@ drawLetterNextRow:
     j drawLetterRowLoop
 
 drawLetterEnd:
-    lw $s5, 4($sp)
+    lw $s5, 4($sp)              # restore $s0 - $s5
     lw $s4, 8($sp)
     lw $s3, 12($sp)
     lw $s2, 16($sp)
     lw $s1, 20($sp)
     lw $s0, 24($sp)
-    lw $ra, 28($sp)
-    addi $sp, $sp, 32
+    lw $ra, 28($sp)             # restore return address
+    addi $sp, $sp, 32           # fix stack
     jr $ra
     
 # Function: drawGameOverScreen
 drawGameOverScreen:
-    lw $t0, ADDR_DSPL
-    li $t1, 0
+    lw $t0, ADDR_DSPL           # $t0 = ADDR_DSPL
+    li $t1, 0                   # $t1 = 0 (no colour)
     li $t2, 65536               # 256 * 256 = 65536 pixels in the Bitmap
-    li $t3, 0
+    li $t3, 0                   # $t3 = pixel index count
     
 drawGameOverScreenClearLoop:
-    beq $t3, $t2, drawGameOverScreenClearDone
-    sll $t4, $t3, 2
-    add  $t5, $t0, $t4
-    sw   $t1, 0($t5)
-    addi $t3, $t3, 1
+    beq $t3, $t2, drawGameOverScreenClearDone           # if $t3 (count) = $t2 (total pixels), done
+    sll $t4, $t3, 2                                     # $t4 = byte offset $t4 = $t3 * 4   
+    add  $t5, $t0, $t4                                  # $t5 = ADDR_DSPL + $t4 (final address)
+    sw $t1, 0($t5)                                      # clear pixel at $t5
+    addi $t3, $t3, 1                                    # $t3 += 1
     j drawGameOverScreenClearLoop
     
 drawGameOverScreenClearDone:
