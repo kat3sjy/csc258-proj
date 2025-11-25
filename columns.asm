@@ -100,8 +100,8 @@ gravity_timer:      .word 0             # ms since last automatic drop
 gravity_interval:   .word 500000          # interval between each drop
 gravity_elapsed:    .word 0             # counts number of automatic drops
 gravity_increase:   .word 10            # threshold number of automatic drops before speed up
-gravity_min:        .word 750           # smallest interval between each drop (fastest gravity speed)
-gravity_decrement:  .word 250           # gravity interval decrease per speed up
+gravity_min:        .word 150000           # smallest interval between each drop (fastest gravity speed)
+gravity_decrement:  .word 50000           # gravity interval decrease per speed up
 
 newline:  .asciiz "\n"
 debug_msg_resetY: .asciiz "yo "
@@ -1653,170 +1653,190 @@ Handle_GameOver:
 
     jal drawGameOverScreen
     jal gameOverOptions
-    beq $v0, $zero, GameOver_Quit
 
     jal resetGame       # Retry path: reset all game state and start fresh
-
+    jal clearDisplay
     jal drawBorder       # Re-draw things and continue the main game loop
     jal drawCol          
     jal Draw_Game_Grid
     jal drawCurrCol
     b game_loop
     
-GameOver_Quit:
-    li $v0, 10
-    syscall
-    
-# Function: drawLetter
-# Arguments:        $a0 = address of 7-byte letter
-#                   $a1 = X pixel
-#                   $a2 = Y pixel
-# Return Values:    none
-drawLetter:
-    addi $sp, $sp, -36              # allocate 32 bytes on stack for saved registers
-    sw $ra, 32($sp)                 # save return address
-    sw $s0, 28($sp)                 # save registers $s0 - $s5
-    sw $s1, 24($sp)
-    sw $s2, 20($sp)
-    sw $s3, 16($sp)
-    sw $s4, 12($sp)
-    sw $s5, 8($sp)
-    sw $s6, 4($sp)
-    sw $zero, 0($sp)
-
-    move $s0, $a0                   # letter pattern address
-    move $s1, $a1                   # base X (in pixels)
-    move $s2, $a2                   # base Y (in pixels)
-    la   $t0, gameOver_colour       # $s3 = gameOver_colour
-    lw   $s6, 0($t0)                # white
-
-    li   $s4, 7                     # row count
-    li   $s5, 0                     # row index
-    li   $t9, 3                     # scale factor = 3 
-    
-drawLetterRowLoop:
-    beq  $s5, $s4, drawLetterEnd
-
-    add  $t0, $s0, $s5              # load byte for this row
-    lbu  $t1, 0($t0)                # load byte unsigned $t1
-    li   $t2, 0                     # col index
-    
-drawLetterColLoop:
-    li   $t3, 5
-    beq  $t2, $t3, drawLetterNextRow        # if $t2 = $t3, go to next row
-
-    li   $t4, 1                     # $t4 = 1
-    sll  $t4, $t4, 4                # Shift Logical Left $t4 = $t4 * 16
-    srlv $t5, $t4, $t2              # Shift Right Logical Variable $t5 = $t4 shifted by $t2
-    and  $t6, $t1, $t5
-    beq  $t6, $zero, drawLetterColSkip
-
-    mul  $t6, $t2, $t9              # X = baseX + col * scale
-    add  $t6, $t6, $s1
-
-    mul  $t7, $s5, $t9              # Y = baseY + row * scale
-    add  $t7, $t7, $s2
-
-    li   $t0, 0                     # block row counter
-    
-drawLetterBlockRow:
-    beq  $t0, $t9, drawLetterBlockEnd
-    li   $t1, 0                     # block col counter
-    
-drawLetterBlockCol:
-    beq  $t1, $t9, drawLetterBlockColEnd
-
-    add  $t2, $t7, $t0              # $t2 (currentY) = $t7 (pixelY) + t0
-    sll  $t2, $t2, 7                # $t2 * 128
-    
-    add  $t3, $t6, $t1              # $t3 (currentX) = $t6 (pixelX) + t1
-    sll  $t3, $t3, 2                # $t3 * 4
-    add  $t2, $t2, $t3              # $t2 = $t2 + $t3 total offset
-    lw   $t4, ADDR_DSPL             # $t4 = ADDR_DSPL   
-    add  $t2, $t4, $t2              # $t2 = ADDR_DSPL + offset
-    sw   $s6, 0($t2)                # draw pixel at $t2
-
-    addi $t1, $t1, 1                # $t1 += 1
-    j drawLetterBlockCol
-    
-drawLetterBlockColEnd:
-    addi $t0, $t0, 1                # $t0 += 1
-    j drawLetterBlockRow
-    
-drawLetterBlockEnd:
-
-drawLetterColSkip:
-    addi $t2, $t2, 1
-    j drawLetterColLoop
-
-drawLetterNextRow:
-    addi $s5, $s5, 1
-    j drawLetterRowLoop
-
-drawLetterEnd:
-    lw $s6, 4($sp)             
-    lw $s5, 8($sp)             
-    lw $s4, 12($sp)            
-    lw $s3, 16($sp)             
-    lw $s2, 20($sp)             
-    lw $s1, 24($sp)             
-    lw $s0, 28($sp)             
-    lw $ra, 32($sp)            
-    
-    addi $sp, $sp, 36          
-    jr $ra
-    
 # Function: drawGameOverScreen
 drawGameOverScreen:
-    lw $t0, ADDR_DSPL           # $t0 = ADDR_DSPL
-    li $t1, 0                   # $t1 = 0 (no colour)
-    li $t2, 65536               # 256 * 256 = 65536 pixels in the Bitmap
-    li $t3, 0                   # $t3 = pixel index count
+    addi $sp, $sp, -8
+    sw   $ra, 4($sp)         # save return addr
+    sw   $s0, 0($sp)         # save $s0 (we'll use it for display base)
     
-drawGameOverScreenClearLoop:
-    beq $t3, $t2, drawGameOverScreenClearDone           # if $t3 (count) = $t2 (total pixels), done
-    sll $t4, $t3, 2                                     # $t4 = byte offset $t4 = $t3 * 4   
-    add  $t5, $t0, $t4                                  # $t5 = ADDR_DSPL + $t4 (final address)
-    sw $t1, 0($t5)                                      # clear pixel at $t5
-    addi $t3, $t3, 1                                    # $t3 += 1
-    j drawGameOverScreenClearLoop
+    lw   $s0, ADDR_DSPL       # display base
+    li   $t1, 0               # clear color
+    li   $t2, 0               # y = 0
+
+clear_rows:
+    li   $t3, 128             # width (columns)
+    beq  $t2, 128, done         # if y == 128, finished
+    sll  $t4, $t2, 7         # row_base = y * 128 (bytes)
+    li   $t5, 0               # x = 0
+
+clear_cols:
+    beq  $t5, $t3, next_row
+    sll  $t6, $t5, 2         # col_offset = x * 4
+    add  $t7, $t4, $t6       # row_base + col_offset
+    add  $t7, $s0, $t7       # final address = display_base + offset
+    sw   $t1, 0($t7)         # clear pixel
+    addi $t5, $t5, 1
+    j clear_cols
+
+next_row:
+    addi $t2, $t2, 1
+    j clear_rows
+done:
+    lw $t0, ADDR_DSPL                   # $t0 = ADDR_DSPL
+    lw $t1, gameOver_colour             # $t1 = borderColour
+    addi $t2, $t0, 0                    # $t2 = top left corner (starting point)
     
-drawGameOverScreenClearDone:
-    la $a0, letter_G            # Letter G
-    li $a1, 28
-    li $a2, 40
-    jal drawLetter
+    # Letter G
+    addi $t4, $t0, 780
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 12($t4)
+    sw $t1, 16($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    sw $t1, 524($t4)
+    sw $t1, 528($t4)
+    sw $t1, 268($t4)
+    sw $t1, 272($t4)
+    sw $t1, 400($t4)
+    
+    # Letter A
+    addi $t4, $t0, 808
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 12($t4)
+    sw $t1, 16($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 144($t4)
+    sw $t1, 272($t4)
+    sw $t1, 400($t4)
+    sw $t1, 528($t4)
+    sw $t1, 388($t4)
+    sw $t1, 392($t4)
+    sw $t1, 396($t4)
+    sw $t1, 400($t4)
 
-    la $a0, letter_A            # Letter A
-    addi $a1, $a1, 22
-    jal drawLetter
+    # Letter M
+    addi $t4, $t0, 836
+    sw $t1, 0($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 132($t4)
+    sw $t1, 264($t4)
+    sw $t1, 140($t4)
+    sw $t1, 16($t4)
+    sw $t1, 144($t4)
+    sw $t1, 272($t4)
+    sw $t1, 400($t4)
+    sw $t1, 528($t4)
+    
+    # Letter E_1
+    addi $t4, $t0, 864
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 12($t4)
+    sw $t1, 16($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    sw $t1, 524($t4)
+    sw $t1, 528($t4)
 
-    la $a0, letter_M            # Letter M
-    addi $a1, $a1, 22
-    jal drawLetter
+    # Letter O
+    addi $t4, $t0, 1676
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 12($t4)
+    sw $t1, 16($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    sw $t1, 524($t4)
+    sw $t1, 528($t4)
+    sw $t1, 144($t4)
+    sw $t1, 272($t4)
+    sw $t1, 400($t4)
+    sw $t1, 528($t4)
+    
+    # Letter V
+    addi $t4, $t0, 1704
+    sw $t1, 0($t4)
+    sw $t1, 16($t4)
+    sw $t1, 128($t4)
+    sw $t1, 144($t4)
+    sw $t1, 260($t4)
+    sw $t1, 268($t4)
+    sw $t1, 388($t4)
+    sw $t1, 396($t4)
+    sw $t1, 520($t4)
+    
+    # Letter E_2
+    addi $t4, $t0, 1732
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 12($t4)
+    sw $t1, 16($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    sw $t1, 524($t4)
+    sw $t1, 528($t4)
 
-    la $a0, letter_E            # Letter E
-    addi $a1, $a1, 22
-    jal drawLetter
-
-    la $a0, letter_O            # Letter O
-    li $a1, 28
-    li $a2, 100
-    jal drawLetter
-
-    la $a0, letter_V            # Letter V
-    addi $a1, $a1, 22
-    jal drawLetter
-
-    la $a0, letter_E            # Letter E
-    addi $a1, $a1, 22
-    jal drawLetter
-
-    la $a0, letter_R            # Letter R
-    addi $a1, $a1, 22
-    jal drawLetter
-
-    jr $ra
+    # Letter R
+    addi $t4, $t0, 1760
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 12($t4)
+    sw $t1, 16($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 268($t4)
+    sw $t1, 272($t4)
+    sw $t1, 144($t4)
+    sw $t1, 392($t4)
+    sw $t1, 524($t4)
+    sw $t1, 528($t4)
     
 # Function: GameOverOptions
 gameOverOptions:
@@ -1836,10 +1856,8 @@ gameOverOptionsLoop:
 
 gameOverOptionsKeyInput:
     lw $t2, 4($t0)                  # ascii code
-    li $t3, 0x72                    # 'r' was pressed
-    beq $t2, $t3, gameOverRetry
-    li $t3, 0x71                    # 'q' was pressed
-    beq $t2, $t3, gameOverQuit
+    beq $t2, 0x72, gameOverRetry
+    beq $t2, 0x71, gameOverQuit
     j gameOverOptionsLoop
 
 gameOverRetry:
@@ -1847,8 +1865,8 @@ gameOverRetry:
     j gameOverOptionsLoopEnd
 
 gameOverQuit:
-    li $v0, 0
-    j gameOverOptionsLoopEnd
+    li $v0, 10
+    syscall
 
 gameOverOptionsLoopEnd:
     lw $t0, 0($sp)
@@ -1888,7 +1906,7 @@ resetGameClearEnd:
 
     sw $zero, gravity_timer
     sw $zero, gravity_elapsed
-    li $t0, 2000
+    li $t0, 500000
     sw $t0, gravity_interval
 
     lw $t0, ADDR_DSPL    # no-op but keeps pattern
@@ -1903,3 +1921,35 @@ resetGameClearEnd:
 genNextCol:
     addi $sp, $sp, -4
     sw $ra, 0($sp)
+    
+clearDisplay:
+    addi $sp, $sp, -8
+    sw $ra, 4($sp)
+
+    lw $t0, ADDR_DSPL               # $t0 = ADDR_DSPL
+    li $t1, 0                       # $t1 = 0 (no colour)
+    li $t2, 0                       # y = 0
+
+clearDisplayRows:
+    li $t3, 128                     # $t3 = 128
+    beq $t2, $t3, clearDisplayEnd   # if y == 128 clearDisplayEnd
+    sll $t4, $t2, 7                 # row = y * 128
+    li $t5, 0                       # x = 0
+
+clearDisplayCols:
+    beq $t5, $t3, clearDisplayNextRow
+    sll $t6, $t5, 2                 # col offset = x * 4
+    add $t7, $t4, $t6               # row + col offset
+    add $t7, $t0, $t7               # address = ADDR_DSPL + offset
+    sw $t1, 0($t7)                  # draw clear pixel
+    addi $t5, $t5, 1
+    j clearDisplayCols
+
+clearDisplayNextRow:
+    addi $t2, $t2, 1
+    j clearDisplayRows
+
+clearDisplayEnd:
+    lw $ra, 4($sp)
+    addi $sp, $sp, 8
+    jr $ra
