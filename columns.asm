@@ -91,6 +91,11 @@ easy_min:           .word 200000            # Slower minimum speed
 medium_min:         .word 150000            # Normal minimum speed
 hard_min:           .word 100000            # Faster minimum speed
 
+# Difficulty score multipliers
+easy_multiplier:    .word 1         # 1x points for easy
+medium_multiplier:  .word 2         # 2x points for medium
+hard_multiplier:    .word 3         # 3x points for hard
+
 .align 2
 
 gameOver_colour:    .word 0xffffff      # White
@@ -1334,9 +1339,10 @@ CD_Return:
 # Updates score based on gems cleared and chain level
 # Each gem = 10 points * (1 + chain_level)
 Update_Score:
-    addi $sp, $sp, -8
-    sw $ra, 4($sp)
-    sw $t0, 0($sp)
+    addi $sp, $sp, -12
+    sw $ra, 8($sp)
+    sw $t0, 4($sp)
+    sw $t1, 0($sp)
     
     lw $t0, score           # Load current score
     lw $t1, chain_level     # Load chain level
@@ -1345,6 +1351,28 @@ Update_Score:
     li $t2, 3               # Base points (1 per gem * 3 gems)
     addi $t3, $t1, 1        # Multiplier = 1 + chain_level
     mul $t2, $t2, $t3       # Points = base * multiplier
+    
+    # Apply difficulty multiplier
+    lw $t4, difficulty_level    # Load difficulty (0=Easy, 1=Medium, 2=Hard)
+    
+    # Get appropriate multiplier
+    beq $t4, 0, use_easy_mult
+    li $t5, 1
+    beq $t4, $t5, use_medium_mult
+    j use_hard_mult
+use_easy_mult:
+    lw $t5, easy_multiplier
+    j apply_mult
+    
+use_medium_mult:
+    lw $t5, medium_multiplier
+    j apply_mult
+    
+use_hard_mult:
+    lw $t5, hard_multiplier
+
+apply_mult:
+    mul $t2, $t2, $t5       # Points = base * chain * difficulty
     
     add $t0, $t0, $t2       # Add to score
     sw $t0, score           # Save new score
@@ -1355,11 +1383,12 @@ Update_Score:
     
     jal Draw_Score
     
-    lw $t0, 0($sp)
-    lw $ra, 4($sp)
-    addi $sp, $sp, 8
+    lw $t1, 0($sp)
+    lw $t0, 4($sp)
+    lw $ra, 8($sp)
+    addi $sp, $sp, 12
     jr $ra
-
+    
 # Function: Reset_Chain
 # Resets chain level to 0 (call when no more matches found)
 Reset_Chain:
