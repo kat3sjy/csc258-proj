@@ -91,15 +91,6 @@ digit_9: .byte 0b111, 0b101, 0b111, 0b001, 0b111
 
 digit_table: .word digit_0, digit_1, digit_2, digit_3, digit_4, digit_5, digit_6, digit_7, digit_8, digit_9
 
-# Letter patterns for 5x7 pixel letters for 'GAME OVER'
-letter_G:   .byte 0b01110,0b10001,0b10000,0b10011,0b10001,0b10001,0b01110
-letter_A:   .byte 0b01110,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001
-letter_M:   .byte 0b10001,0b11011,0b10101,0b10101,0b10001,0b10001,0b10001
-letter_E:   .byte 0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b11111
-letter_O:   .byte 0b01110,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110
-letter_V:   .byte 0b10001,0b10001,0b10001,0b10001,0b01010,0b01010,0b00100
-letter_R:   .byte 0b11110,0b10001,0b10001,0b11110,0b10100,0b10010,0b10001
-
 .align 2
 
 gameOver_colour:    .word 0xffffff      # White
@@ -118,11 +109,11 @@ nextColX:           .word 9             # X coord for preview col
 nextColY:           .word 2             # Y coord for preview col
 
 gravity_timer:      .word 0             # ms since last automatic drop
-gravity_interval:   .word 500000          # interval between each drop
+gravity_interval:   .word 500000        # interval between each drop
 gravity_elapsed:    .word 0             # counts number of automatic drops
 gravity_increase:   .word 10            # threshold number of automatic drops before speed up
-gravity_min:        .word 150000           # smallest interval between each drop (fastest gravity speed)
-gravity_decrement:  .word 50000           # gravity interval decrease per speed up
+gravity_min:        .word 150000        # smallest interval between each drop (fastest gravity speed)
+gravity_decrement:  .word 50000         # gravity interval decrease per speed up
 
 newline:  .asciiz "\n"
 debug_msg_resetY: .asciiz "yo "
@@ -173,31 +164,31 @@ game_loop:
     lw $t0, gravity_timer                   # $t0 = gravity_timer
     addi $t0, $t0, 1                        # $t0 += 1
     sw $t0, gravity_timer
-    lw  $t1, gravity_interval               # $t1 = gravity_intervak
+    lw $t1, gravity_interval                # $t1 = gravity_intervak
     blt $t0, $t1, Skip_Gravity              # if $t0 < $t1, skip gravity loop
     
-    lw   $t6, gravity_elapsed               # $t6 = gravity_elapsed
+    lw $t6, gravity_elapsed                 # $t6 = gravity_elapsed
     addi $t6, $t6, 1                        # $t6 += 1
-    sw   $t6, gravity_elapsed
+    sw $t6, gravity_elapsed
 
-    lw   $t7, gravity_increase              # $t7 = gravity_increase
-    blt  $t6, $t7, Skip_TimeSpeedup         # if $t6 < $t7, skip speedup
+    lw $t7, gravity_increase               # $t7 = gravity_increase
+    blt $t6, $t7, Skip_TimeSpeedup         # if $t6 < $t7, skip speedup
 
     # Time to level up: decrease gravity_interval and reset elapsed counter
-    lw   $t2, gravity_interval              # $t2 = gravity_interval
-    lw   $t3, gravity_decrement             # $t3 = gravity_decrement
-    sub  $t4, $t2, $t3                      # $t4 = $t2 - $t3
-    lw   $t5, gravity_min                   # $t5 = gravity_min
-    blt  $t4, $t5, SetIntervalMinTime       # if $t4 < $t5, set interval minimum
+    lw $t2, gravity_interval               # $t2 = gravity_interval
+    lw $t3, gravity_decrement              # $t3 = gravity_decrement
+    sub $t4, $t2, $t3                      # $t4 = $t2 - $t3
+    lw $t5, gravity_min                    # $t5 = gravity_min
+    blt $t4, $t5, SetIntervalMinTime       # if $t4 < $t5, set interval minimum
 
-    sw   $t4, gravity_interval              
-    j    ResetElapsed
+    sw $t4, gravity_interval              
+    j ResetElapsed
     
 SetIntervalMinTime:
-    sw   $t5, gravity_interval              # reset gravity_interval
+    sw $t5, gravity_interval                # reset gravity_interval
 
 ResetElapsed:
-    sw   $zero, gravity_elapsed             # reset gravity elapsed time to 0
+    sw $zero, gravity_elapsed               # reset gravity elapsed time to 0
 
 Skip_TimeSpeedup:
     jal Check_Vertical_Collision            # check vertical collision
@@ -234,12 +225,12 @@ Handle_Landing:
     li $t1, 2
     blt $t0, $t1, Handle_GameOver
     
-    lw   $t0, nextCol0              
-    sw   $t0, currCol0
-    lw   $t0, nextCol1
-    sw   $t0, currCol1
-    lw   $t0, nextCol2
-    sw   $t0, currCol2
+    lw $t0, nextCol0              
+    sw $t0, currCol0
+    lw $t0, nextCol1
+    sw $t0, currCol1
+    lw $t0, nextCol2
+    sw $t0, currCol2
 
     li $t0, 2                       # starting X coord
     sw $t0, currColX
@@ -442,35 +433,34 @@ pauseRoutineEnd:
     li $t5, 26                                  # ending x   
 
 clearPauseRow:
-    beq  $t2, $t3, clearPauseDone
-    sll  $t6, $t2, 7                            # row = y * 128
-    move $t7, $t4                               # x = starting x
+    beq $t2, $t3, clearPauseDone
+    sll $t6, $t2, 7                             # row = y * 128
+    move $t7, $t4                     
 
 clearPauseCol:
-    beq  $t7, $t5, clearPauseNextRow
-    sll  $t8, $t7, 2                        # x * 4
-    add  $t9, $t6, $t8                      # row + x * 4
-    add  $t9, $s0, $t9                      # final address = ADDR_DSPL + offset
-    sw   $t1, 0($t9)                        # clear pixel
+    beq $t7, $t5, clearPauseNextRow
+    sll $t8, $t7, 2                        # x * 4
+    add $t9, $t6, $t8                      # row + x * 4
+    add $t9, $s0, $t9                      # final address = ADDR_DSPL + offset
+    sw $t1, 0($t9)                         # clear pixel
     addi $t7, $t7, 1
-    j    clearPauseCol
+    j clearPauseCol
 
 clearPauseNextRow:
     addi $t2, $t2, 1
-    j    clearPauseRow
+    j clearPauseRow
 
 clearPauseDone:
-    jal  Draw_Game_Grid             # Redraw game state
-    jal  drawCurrCol
+    jal Draw_Game_Grid                     # Redraw game state
+    jal drawCurrCol
     # jal  Draw_Score
-    jal  drawBorder
+    jal drawBorder
     
-    # restore and return
-    lw   $s1, 0($sp)
-    lw   $s0, 4($sp)
-    lw   $ra, 8($sp)
+    lw $s1, 0($sp)
+    lw $s0, 4($sp)
+    lw $ra, 8($sp)
     addi $sp, $sp, 12
-    jr   $ra
+    jr $ra
 
 drawCurrCol: 
     lw $t0, ADDR_DSPL                   # $t0 = ADDR_DSPL
@@ -506,7 +496,7 @@ drawCurrCol:
     sll $t5, $t1, 2
     add $t6, $t4, $t5
     add $t7, $t0, $t6
-    sw  $t3, 0($t7)                     # draw next col top gem preview
+    sw $t3, 0($t7)                      # draw next col top gem preview
 
     lw $t3, nextCol1
     addi $t8, $t2, 1
@@ -520,7 +510,7 @@ drawCurrCol:
     sll $t4, $t8, 7
     add $t6, $t4, $t5
     add $t7, $t0, $t6
-    sw  $t3, 0($t7)                     # draw next col bottom gem preview
+    sw $t3, 0($t7)                      # draw next col bottom gem preview
 
     jr $ra
 
@@ -555,7 +545,7 @@ shuffleCurrCol:
     sw $ra, 4($sp)
     sw $s0, 0($sp)
     
-    jal  eraseCurrCol                  # Erase current column 
+    jal eraseCurrCol                   # Erase current column 
     jal Draw_Game_Grid
 
     lw $t0, currCol0                   # $t0 = top gem
@@ -578,7 +568,7 @@ moveCurrLeft:
     sw $ra, 4($sp)
     sw $s0, 0($sp)
     
-    li $a0, -1                     # Check for moving Left (direction = -1)
+    li $a0, -1                          # Check for moving Left (direction = -1)
     jal Check_Horizontal_Collision
     
     # If collision found ($v0 = 1), skip the move.
@@ -603,15 +593,14 @@ M_Left_End:
     jr $ra
 
 moveCurrDown:
-
     addi $sp, $sp, -8
     sw $ra, 4($sp)
     sw $s0, 0($sp)
     
     lw $t0, currColY
-    addi $t1, $t0, 2        # future bottom gem Y = currColY + 3
-    li   $t2, 17
-    bge  $t1, $t2, M_Down_End   # if would go to Y=18 or more → stop
+    addi $t1, $t0, 2                    # future bottom gem Y = currColY + 3
+    li $t2, 17
+    bge $t1, $t2, M_Down_End            # if $t1 >= $t2, M_Down_End
     
     jal Check_Vertical_Collision
 
@@ -619,10 +608,10 @@ moveCurrDown:
     
     jal eraseCurrCol
     
-    lw   $t0, currColY      # load currColY value
+    lw $t0, currColY                    # load currColY value
     addi $t0, $t0, 1  
     # increment by 1
-    sw   $t0, currColY      # save it back
+    sw   $t0, currColY                  # save it back
     
     jal drawCurrCol
     
@@ -643,7 +632,7 @@ moveCurrRight:
     sw $ra, 4($sp)
     sw $s0, 0($sp)
     
-    li $a0, 1                      # Check for moving Right (direction = 1)
+    li $a0, 1                           # Check for moving Right (direction = 1)
     jal Check_Horizontal_Collision
     
     # If collision found ($v0 = 1), skip the move.
@@ -671,7 +660,6 @@ M_Right_End:
 # Function: drawBorder
 # Arguments:         none
 # Return Values:     none
-
 drawBorder:
     lw $t0, ADDR_DSPL                   # $t0 = ADDR_DSPL
     lw $t1, borderColour                # $t1 = borderColour
@@ -701,7 +689,7 @@ drawVBorders:
 # Function: drawCol - draws initial column
 drawCol:    
     addi $sp, $sp, -4                   # Make space on stack
-    sw   $ra, 0($sp)                    # Save return address
+    sw $ra, 0($sp)                    # Save return address
     li $t4, 0
 
 drawColLoop:    
@@ -719,11 +707,11 @@ drawColLoop:
     
 drawColLoopEnd:
     jal drawCurrCol
-    lw   $ra, 0($sp)                   # Restore return address
+    lw $ra, 0($sp)                   # Restore return address
     addi $sp, $sp, 4
-    jr   $ra                           # Fixes all my problems
+    jr $ra                           # Fixes all my problems
     
-# Function: randomColour:
+# Function: randomColour
 randomColour:
     addi $sp, $sp, -4                  # Save register on stack
     sw $t0, 0($sp)
@@ -871,18 +859,18 @@ H_End:
 
 Check_Vertical_Collision:
     addi $sp, $sp, -12
-    sw   $ra, 8($sp)
-    sw   $s0, 4($sp)     
-    sw   $s1, 0($sp)      
+    sw $ra, 8($sp)
+    sw $s0, 4($sp)     
+    sw $s1, 0($sp)      
 
-    lw $t0, currColX       # X pos (display: 1-6)
-    lw $t1, currColY       # Y pos (top gem) (display: 1-17)
+    lw $t0, currColX                    # X pos (display: 1-6)
+    lw $t1, currColY                    # Y pos (top gem) (display: 1-17)
     la $t2, GAME_GRID
     lw $t3, GRID_WIDTH
     lw $t4, GRID_HEIGHT
     lw $t9, EMPTY_COLOR
 
-    li $v0, 0              # default: no collision
+    li $v0, 0                           # default: no collision
 
     # Loop over the 3 gems in the column
     li $s0, 0
@@ -890,7 +878,7 @@ Check_Vertical_Collision:
 V_Check_Loop:
     beq $s0, 3, V_No_Collision
 
-    add $t5, $t1, $s0      # Y of current gem (display coordinates)
+    add $t5, $t1, $s0                   # Y of current gem (display coordinates)
 
     # Check if gem is at the bottom of play area (Y = 17 in display coords)
     li $t6, 18
@@ -899,19 +887,19 @@ V_Check_Loop:
     # Skip if gem is above grid (negative Y)
     blt $t5, $zero, V_Skip_Gem
 
-    addi $t6, $t5, 1       # check cell below (Y+1 in display coordinates)
+    addi $t6, $t5, 1                    # check cell below (Y+1 in display coordinates)
 
     # If cell below is bottom of play area, collision
     li $t7, 18
     bge $t6, $t7, V_Collision_Found
 
     # Convert display coordinates to grid coordinates for grid access
-    addi $a0, $t0, -1      # grid X
-    addi $a1, $t6, -1      # grid Y (cell below)
+    addi $a0, $t0, -1                   # grid X
+    addi $a1, $t6, -1                   # grid Y (cell below)
 
-    # Calculate index: idx = grid_Y * WIDTH + grid_X
-    mul $t7, $a1, $t3      # grid_Y * 6
-    add $t7, $t7, $a0      # + grid_X
+    # Calculate index: index = grid_Y * width + grid_X
+    mul $t7, $a1, $t3                   # grid_Y * 6
+    add $t7, $t7, $a0                   # + grid_X
 
     # Bounds check for grid access
     blt $t7, $zero, V_Skip_Gem
@@ -919,9 +907,9 @@ V_Check_Loop:
     bge $t7, $t8, V_Skip_Gem
 
     # Access memory
-    sll $t7, $t7, 2        # * 4 bytes
-    add $t7, $t2, $t7      # GAME_GRID address
-    lw  $t8, 0($t7)        # Color at grid[grid_X][grid_Y]
+    sll $t7, $t7, 2                     # * 4 bytes
+    add $t7, $t2, $t7                   # GAME_GRID address
+    lw $t8, 0($t7)                      # Color at grid[grid_X][grid_Y]
     
     bne $t8, $t9, V_Collision_Found  # If not empty, collision
 
@@ -933,42 +921,42 @@ V_Collision_Found:
     li $v0, 1
 
 V_No_Collision:
-    lw   $s1, 0($sp)
-    lw   $s0, 4($sp)
-    lw   $ra, 8($sp)
+    lw $s1, 0($sp)
+    lw $s0, 4($sp)
+    lw $ra, 8($sp)
     addi $sp, $sp, 12
     jr $ra
     
 Lock_Column_In_Place:
     addi $sp, $sp, -12
-    sw   $ra, 8($sp)
-    sw   $s0, 4($sp)
-    sw   $s1, 0($sp)
+    sw $ra, 8($sp)
+    sw $s0, 4($sp)
+    sw $s1, 0($sp)
 
     # Convert display coordinates to 0-indexed grid coordinates
-    lw   $s0, currColX
-    addi $s0, $s0, -1       # $s0 = grid X (0-indexed)
-    lw   $s1, currColY
-    addi $s1, $s1, -1       # $s1 = grid Y of top gem (0-indexed)
+    lw $s0, currColX
+    addi $s0, $s0, -1                   # $s0 = grid X (0-indexed)
+    lw $s1, currColY
+    addi $s1, $s1, -1                   # $s1 = grid Y of top gem (0-indexed)
 
     # Load gem colors
-    lw $s3, currCol0         # $s3 = top color
-    lw $s4, currCol1         # $s4 = middle color
-    lw $s5, currCol2         # $s5 = bottom color
+    lw $s3, currCol0                    # $s3 = top color
+    lw $s4, currCol1                    # $s4 = middle color
+    lw $s5, currCol2                    # $s5 = bottom color
 
     # loading grid data
-    lw $s2, GRID_WIDTH       # $s2 = width (6)
-    lw $t9, GRID_HEIGHT      # $t9 = height (18)
-    la $t0, GAME_GRID        # $t0 = grid base address (&GAME_GRID)
+    lw $s2, GRID_WIDTH                  # $s2 = width (6)
+    lw $t9, GRID_HEIGHT                 # $t9 = height (18)
+    la $t0, GAME_GRID                   # $t0 = grid base address (&GAME_GRID)
 
-    li $t2, 0                # $t2 = gem loop 0..2
+    li $t2, 0                           # $t2 = gem loop 0-2
 LockLoop:
     beq $t2, 3, LockLoopEnd
 
     # Compute grid Y of this gem
-    add $t5, $s1, $t2        # $t5 = grid Y of this gem (+ loop index)
-    blt $t5, $zero, Skip_Lock  # bounds check
-    bge $t5, $t9, Skip_Lock    # bounds check
+    add $t5, $s1, $t2                   # $t5 = grid Y of this gem (+ loop index)
+    blt $t5, $zero, Skip_Lock           # bounds check
+    bge $t5, $t9, Skip_Lock             # bounds check
 
     # Select color
     li $t6, 0
@@ -998,13 +986,14 @@ Store_Lock:
     add $t8, $t0, $t8        # $t8 = &GAME_GRID + offset
 
     # Store the color at the calculated address
-    sw  $t4, 0($t8)
+    sw $t4, 0($t8)
     
 Skip_Lock:
     addi $t2, $t2, 1
     j LockLoop
 
 LockLoopEnd:
+
 Lock_Done:
     lw $s1, 0($sp)
     lw $s0, 4($sp)
@@ -1038,7 +1027,7 @@ ColLoop_Gravity:
     
     # Scanning column from bottom to top
     li $s6, 16                  # write_pos = 16 (bottom row)
-    li $s5, 16           # read_pos = HEIGHT-1 (start at bottom)
+    li $s5, 16                  # read_pos = HEIGHT-1 (start at bottom)
     
 RowLoop_Gravity:
     blt $s5, $zero, NextCol_Gravity
@@ -1101,7 +1090,6 @@ GravityEnd:
 # Scan GAME_GRID for 3+ in a row (H, V, D). Clears the matches if found.
 # Returns: $v0 = 1 if match found and cleared, 0 otherwise.
 Check_For_Matches:
-    
     # Save $ra and all used $s registers (9 registers * 4 bytes = 36 bytes)
     addi $sp, $sp, -36
     sw $ra, 32($sp)
@@ -1316,6 +1304,7 @@ Check_Direction:
     lw $t8, 0($s2)                 # $t8 = Color 2 (C2)
     
     bne $t8, $t5, DirEnd_NoMatch   # Compare C2 ($t8) with C0 ($t5)
+    
 MatchFound:
     addi $sp, $sp, -12
     sw $t3, 8($sp)  # Save X
@@ -1350,7 +1339,6 @@ CD_Return:
     lw $ra, 16($sp)
     addi $sp, $sp, 20
     jr $ra
-    
     
 # Function: Update_Score
 # Updates score based on gems cleared and chain level
@@ -1620,25 +1608,25 @@ Handle_GameOver:
 # Function: drawGameOverScreen
 drawGameOverScreen:
     addi $sp, $sp, -8
-    sw   $ra, 4($sp)       
-    sw   $s0, 0($sp)         
+    sw $ra, 4($sp)       
+    sw $s0, 0($sp)         
     
-    lw   $s0, ADDR_DSPL       # display base
-    li   $t1, 0               # clear color
-    li   $t2, 0               # y = 0
+    lw $s0, ADDR_DSPL           # display base
+    li $t1, 0                   # clear color
+    li $t2, 0                   # y = 0
 
 clear_rows:
-    li   $t3, 128             # width (columns)
-    beq  $t2, 128, done         # if y == 128, finished
-    sll  $t4, $t2, 7         # row_base = y * 128 (bytes)
-    li   $t5, 0               # x = 0
+    li $t3, 128                 # width (columns)
+    beq $t2, 128, done          # if y == 128, finished
+    sll $t4, $t2, 7             # row_base = y * 128 (bytes)
+    li $t5, 0                   # x = 0
 
 clear_cols:
-    beq  $t5, $t3, next_row
-    sll  $t6, $t5, 2         # col_offset = x * 4
-    add  $t7, $t4, $t6       # row_base + col_offset
-    add  $t7, $s0, $t7       # final address = display_base + offset
-    sw   $t1, 0($t7)         # clear pixel
+    beq $t5, $t3, next_row
+    sll $t6, $t5, 2             # col_offset = x * 4
+    add $t7, $t4, $t6           # row_base + col_offset
+    add $t7, $s0, $t7           # final address = display_base + offset
+    sw $t1, 0($t7)              # clear pixel
     addi $t5, $t5, 1
     j clear_cols
 
