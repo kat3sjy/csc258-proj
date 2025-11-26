@@ -39,6 +39,27 @@ GRID_SIZE:
 MATCH_GRID:
     .byte 0:108
 
+difficulty_level:       .word 0             # 0=Easy, 1=Medium, 2=Hard
+difficulty_selected:    .word 0             # 0=not selected, 1=selected
+
+# Difficulty settings (initial gravity_interval values)
+easy_interval:      .word 700000            # Slower (easier)
+medium_interval:    .word 400000            # Normal
+hard_interval:      .word 100000            # Faster (harder)
+
+# Difficulty settings (gravity speed increase parameters)
+easy_increase:      .word 15                # Speed up every 15 drops
+medium_increase:    .word 10                # Speed up every 10 drops
+hard_increase:      .word 7                 # Speed up every 7 drops
+
+easy_decrement:     .word 40000             # Smaller speed increments
+medium_decrement:   .word 50000             # Normal speed increments
+hard_decrement:     .word 70000             # Larger speed increments
+
+easy_min:           .word 200000            # Slower minimum speed
+medium_min:         .word 150000            # Normal minimum speed
+hard_min:           .word 100000            # Faster minimum speed
+
 ##############################################################################
 # Mutable Data
 ##############################################################################
@@ -110,6 +131,9 @@ space: .asciiz " "
 debug_match_clear_str:  .asciiz "!!! MATCH FOUND and CLEARED starting at ("
 debug_after_match: .asciiz "after matched"
 debug_closing_str: .ascii ")"
+diff_easy_msg:      .asciiz "Easy"
+diff_medium_msg:    .asciiz "Medium"
+diff_hard_msg:      .asciiz "Hard"
 ##############################################################################
 # Code  
 ##############################################################################
@@ -119,6 +143,12 @@ debug_closing_str: .ascii ")"
 
     # Run the game.
 main:    
+    # Show difficulty selection screen
+    jal showDifficultyScreen
+    jal selectDifficulty
+    jal applyDifficultySettings
+    jal clearDisplay
+    
     # Initialize the game
     jal drawBorder                  # Draw game border
     jal drawCol                     # Draw initial column
@@ -1655,6 +1685,11 @@ Handle_GameOver:
 
     jal resetGame       # Retry path: reset all game state and start fresh
     jal clearDisplay
+    # Show difficulty selection screen
+    jal showDifficultyScreen
+    jal selectDifficulty
+    jal applyDifficultySettings
+    jal clearDisplay
     jal drawBorder       # Re-draw things and continue the main game loop
     jal drawCol          
     jal Draw_Game_Grid
@@ -1891,25 +1926,60 @@ resetGameClearLoop:
     j resetGameClearLoop
     
 resetGameClearEnd:
-    sw $zero, score
-    sw $zero, chain_level
+    # sw $zero, score
+    # sw $zero, chain_level
 
-    li $t0, 2
-    sw $t0, currColX
-    li $t0, 1
-    sw $t0, currColY
+    # li $t0, 2
+    # sw $t0, currColX
+    # li $t0, 1
+    # sw $t0, currColY
 
-    sw $zero, currCol0
-    sw $zero, currCol1
-    sw $zero, currCol2
+    # sw $zero, currCol0
+    # sw $zero, currCol1
+    # sw $zero, currCol2
 
-    sw $zero, gravity_timer
-    sw $zero, gravity_elapsed
-    li $t0, 500000
-    sw $t0, gravity_interval
+    # sw $zero, gravity_timer
+    # sw $zero, gravity_elapsed
+    # li $t0, 500000
+    # # sw $t0, gravity_interval
 
-    lw $t0, ADDR_DSPL    # no-op but keeps pattern
+    # # lw $t0, ADDR_DSPL    # no-op but keeps pattern
+    # # Reset difficulty flag to show menu again
+    # sw $zero, difficulty_selected
 
+    # lw $t1, 0($sp)
+    # lw $t0, 4($sp)
+    # lw $ra, 8($sp)
+    # addi $sp, $sp, 12
+    # jr $ra
+    la $t0, score
+    sw $zero, 0($t0)
+    la $t0, chain_level
+    sw $zero, 0($t0)
+
+    li $t1, 2
+    la $t0, currColX
+    sw $t1, 0($t0)
+    li $t1, 1
+    la $t0, currColY
+    sw $t1, 0($t0)
+
+    la $t0, currCol0
+    sw $zero, 0($t0)
+    la $t0, currCol1
+    sw $zero, 0($t0)
+    la $t0, currCol2
+    sw $zero, 0($t0)
+
+    la $t0, gravity_timer
+    sw $zero, 0($t0)
+    la $t0, gravity_elapsed
+    sw $zero, 0($t0)
+    
+    # Reset difficulty flag to show menu again
+    la $t0, difficulty_selected
+    sw $zero, 0($t0)
+    
     lw $t1, 0($sp)
     lw $t0, 4($sp)
     lw $ra, 8($sp)
@@ -1951,4 +2021,406 @@ clearDisplayNextRow:
 clearDisplayEnd:
     lw $ra, 4($sp)
     addi $sp, $sp, 8
+    jr $ra
+
+# Function: showDifficultyScreen
+# Displays the difficulty selection menu
+showDifficultyScreen:
+    addi $sp, $sp, -8
+    sw $ra, 4($sp)
+    sw $s0, 0($sp)
+    
+    lw $s0, ADDR_DSPL
+    lw $t1, borderColour
+    
+    # Draw "EASY" at Y=6
+    addi $t4, $s0, 780          # Position for EASY text
+    # E
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    
+    # A
+    addi $t4, $s0, 796
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 128($t4)
+    sw $t1, 136($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 384($t4)
+    sw $t1, 392($t4)
+    sw $t1, 512($t4)
+    sw $t1, 520($t4)
+    
+    # S
+    addi $t4, $s0, 812
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 392($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    
+    # Y
+    addi $t4, $s0, 828
+    sw $t1, 0($t4)
+    sw $t1, 8($t4)
+    sw $t1, 128($t4)
+    sw $t1, 136($t4)
+    sw $t1, 260($t4)
+    sw $t1, 388($t4)
+    sw $t1, 516($t4)
+    
+    # (
+    addi $t4, $s0, 860
+    sw $t1, 0($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    
+    # 1
+    addi $t4, $s0, 868
+    sw $t1, 4($t4)
+    sw $t1, 128($t4)
+    sw $t1, 132($t4)
+    sw $t1, 260($t4)
+    sw $t1, 388($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    
+    # )
+    addi $t4, $s0, 884
+    sw $t1, 0($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    
+    # Draw "MEDIUM" at Y=11
+    addi $t4, $s0, 1548
+    # M
+    sw $t1, 0($t4)      # Row 0, left edge
+    sw $t1, 16($t4)     # Row 0, right edge
+    sw $t1, 128($t4)    # Row 1, left edge
+    sw $t1, 132($t4)    # Row 1, second pixel
+    sw $t1, 140($t4)    # Row 1, fourth pixel
+    sw $t1, 144($t4)    # Row 1, right edge
+    sw $t1, 256($t4)    # Row 2, left edge
+    sw $t1, 264($t4)    # Row 2, middle pixel
+    sw $t1, 272($t4)    # Row 2, right edge
+    sw $t1, 384($t4)    # Row 3, left edge
+    sw $t1, 400($t4)    # Row 3, right edge
+    sw $t1, 512($t4)    # Row 4, left edge
+    sw $t1, 528($t4)    # Row 4, right edge
+    
+    # E
+    addi $t4, $s0, 1572
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    
+    # D
+    addi $t4, $s0, 1588
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 128($t4)
+    sw $t1, 136($t4)
+    sw $t1, 256($t4)
+    sw $t1, 264($t4)
+    sw $t1, 384($t4)
+    sw $t1, 392($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    
+    # (
+    addi $t4, $s0, 1628
+    sw $t1, 0($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    
+    # 2
+    addi $t4, $s0, 1636
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 136($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    
+    # )
+    addi $t4, $s0, 1652
+    sw $t1, 0($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    
+    # Draw "HARD" at Y=16
+    addi $t4, $s0, 2444
+    # H
+    sw $t1, 0($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    sw $t1, 8($t4)
+    sw $t1, 136($t4)
+    sw $t1, 264($t4)
+    sw $t1, 392($t4)
+    sw $t1, 520($t4)
+    
+    # A
+    addi $t4, $s0, 2460
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 128($t4)
+    sw $t1, 136($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 384($t4)
+    sw $t1, 392($t4)
+    sw $t1, 512($t4)
+    sw $t1, 520($t4)
+    
+    # R
+    addi $t4, $s0, 2476
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 128($t4)
+    sw $t1, 136($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    # sw $t1, 264($t4)
+    sw $t1, 384($t4)
+    sw $t1, 392($t4)
+    sw $t1, 512($t4)
+    sw $t1, 520($t4)
+    
+    # D
+    addi $t4, $s0, 2492
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 128($t4)
+    sw $t1, 136($t4)
+    sw $t1, 256($t4)
+    sw $t1, 264($t4)
+    sw $t1, 384($t4)
+    sw $t1, 392($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    
+    # (
+    addi $t4, $s0, 2524
+    sw $t1, 0($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    
+    # 3
+    addi $t4, $s0, 2532
+    sw $t1, 0($t4)
+    sw $t1, 4($t4)
+    sw $t1, 8($t4)
+    sw $t1, 136($t4)
+    sw $t1, 256($t4)
+    sw $t1, 260($t4)
+    sw $t1, 264($t4)
+    sw $t1, 392($t4)
+    sw $t1, 512($t4)
+    sw $t1, 516($t4)
+    sw $t1, 520($t4)
+    
+    # )
+    addi $t4, $s0, 2548
+    sw $t1, 0($t4)
+    sw $t1, 128($t4)
+    sw $t1, 256($t4)
+    sw $t1, 384($t4)
+    sw $t1, 512($t4)
+    
+    lw $s0, 0($sp)
+    lw $ra, 4($sp)
+    addi $sp, $sp, 8
+    jr $ra
+
+# Function: selectDifficulty
+# Waits for player to press 1 (Easy), 2 (Medium), or 3 (Hard)
+selectDifficulty:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    lw $t9, ADDR_KBRD
+    
+selectDifficultyLoop:
+    # Sleep briefly
+    li $v0, 32
+    li $a0, 50
+    syscall
+    
+    # Check for key press
+    lw $t0, 0($t9)
+    beq $t0, $zero, selectDifficultyLoop
+    
+    # Get key code
+    lw $t1, 4($t9)
+    
+    # Check for 1, 2, or 3
+    li $t2, 0x31                    # ASCII '1'
+    beq $t1, $t2, setEasy
+    li $t2, 0x32                    # ASCII '2'
+    beq $t1, $t2, setMedium
+    li $t2, 0x33                    # ASCII '3'
+    beq $t1, $t2, setHard
+    
+    j selectDifficultyLoop
+
+setEasy:
+    li $t0, 0
+    la $t1, difficulty_level
+    sw $t0, 0($t1)
+    j difficultySelected
+    
+setMedium:
+    li $t0, 1
+    la $t1, difficulty_level
+    sw $t0, 0($t1)
+    j difficultySelected
+    
+setHard:
+    li $t0, 2
+    la $t1, difficulty_level
+    sw $t0, 0($t1)
+    j difficultySelected
+
+difficultySelected:
+    li $t0, 1
+    la $t1, difficulty_selected
+    sw $t0, 0($t1)
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+# Function: applyDifficultySettings
+# Sets game parameters based on selected difficulty
+applyDifficultySettings:
+    addi $sp, $sp, -4
+    sw $t0, 0($sp)
+    
+    la $t0, difficulty_level
+    lw $t0, 0($t0)
+    
+    # Easy = 0
+    beq $t0, $zero, applyEasy
+    # Medium = 1
+    li $t1, 1
+    beq $t0, $t1, applyMedium
+    # Hard = 2
+    j applyHard
+
+applyEasy:
+    la $t2, easy_interval
+    lw $t1, 0($t2)
+    la $t2, gravity_interval
+    sw $t1, 0($t2)
+    
+    la $t2, easy_increase
+    lw $t1, 0($t2)
+    la $t2, gravity_increase
+    sw $t1, 0($t2)
+    
+    la $t2, easy_decrement
+    lw $t1, 0($t2)
+    la $t2, gravity_decrement
+    sw $t1, 0($t2)
+    
+    la $t2, easy_min
+    lw $t1, 0($t2)
+    la $t2, gravity_min
+    sw $t1, 0($t2)
+    j applyDone
+
+applyMedium:
+    la $t2, medium_interval
+    lw $t1, 0($t2)
+    la $t2, gravity_interval
+    sw $t1, 0($t2)
+    
+    la $t2, medium_increase
+    lw $t1, 0($t2)
+    la $t2, gravity_increase
+    sw $t1, 0($t2)
+    
+    la $t2, medium_decrement
+    lw $t1, 0($t2)
+    la $t2, gravity_decrement
+    sw $t1, 0($t2)
+    
+    la $t2, medium_min
+    lw $t1, 0($t2)
+    la $t2, gravity_min
+    sw $t1, 0($t2)
+    j applyDone
+
+applyHard:
+    la $t2, hard_interval
+    lw $t1, 0($t2)
+    la $t2, gravity_interval
+    sw $t1, 0($t2)
+    
+    la $t2, hard_increase
+    lw $t1, 0($t2)
+    la $t2, gravity_increase
+    sw $t1, 0($t2)
+    
+    la $t2, hard_decrement
+    lw $t1, 0($t2)
+    la $t2, gravity_decrement
+    sw $t1, 0($t2)
+    
+    la $t2, hard_min
+    lw $t1, 0($t2)
+    la $t2, gravity_min
+    sw $t1, 0($t2)
+
+applyDone:
+    lw $t0, 0($sp)
+    addi $sp, $sp, 4
     jr $ra
