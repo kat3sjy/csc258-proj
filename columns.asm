@@ -39,27 +39,6 @@ GRID_SIZE:
 MATCH_GRID:
     .byte 0:108
 
-difficulty_level:       .word 0             # 0=Easy, 1=Medium, 2=Hard
-difficulty_selected:    .word 0             # 0=not selected, 1=selected
-
-# Difficulty settings (initial gravity_interval values)
-easy_interval:      .word 700000            # Slower (easier)
-medium_interval:    .word 400000            # Normal
-hard_interval:      .word 100000            # Faster (harder)
-
-# Difficulty settings (gravity speed increase parameters)
-easy_increase:      .word 15                # Speed up every 15 drops
-medium_increase:    .word 10                # Speed up every 10 drops
-hard_increase:      .word 7                 # Speed up every 7 drops
-
-easy_decrement:     .word 40000             # Smaller speed increments
-medium_decrement:   .word 50000             # Normal speed increments
-hard_decrement:     .word 70000             # Larger speed increments
-
-easy_min:           .word 200000            # Slower minimum speed
-medium_min:         .word 150000            # Normal minimum speed
-hard_min:           .word 100000            # Faster minimum speed
-
 ##############################################################################
 # Mutable Data
 ##############################################################################
@@ -91,6 +70,27 @@ digit_9: .byte 0b111, 0b101, 0b111, 0b001, 0b111
 
 digit_table: .word digit_0, digit_1, digit_2, digit_3, digit_4, digit_5, digit_6, digit_7, digit_8, digit_9
 
+difficulty_level:       .word 0             # 0=Easy, 1=Medium, 2=Hard
+difficulty_selected:    .word 0             # 0=not selected, 1=selected
+
+# Difficulty settings (initial gravity_interval values)
+easy_interval:      .word 700000            # Slower (easier)
+medium_interval:    .word 400000            # Normal
+hard_interval:      .word 100000            # Faster (harder)
+
+# Difficulty settings (gravity speed increase parameters)
+easy_increase:      .word 15                # Speed up every 15 drops
+medium_increase:    .word 10                # Speed up every 10 drops
+hard_increase:      .word 7                 # Speed up every 7 drops
+
+easy_decrement:     .word 40000             # Smaller speed increments
+medium_decrement:   .word 50000             # Normal speed increments
+hard_decrement:     .word 70000             # Larger speed increments
+
+easy_min:           .word 200000            # Slower minimum speed
+medium_min:         .word 150000            # Normal minimum speed
+hard_min:           .word 100000            # Faster minimum speed
+
 .align 2
 
 gameOver_colour:    .word 0xffffff      # White
@@ -115,16 +115,6 @@ gravity_increase:   .word 10            # threshold number of automatic drops be
 gravity_min:        .word 150000        # smallest interval between each drop (fastest gravity speed)
 gravity_decrement:  .word 50000         # gravity interval decrease per speed up
 
-newline:  .asciiz "\n"
-debug_msg_resetY: .asciiz "yo "
-comma: .asciiz ", "
-space: .asciiz " "
-debug_match_clear_str:  .asciiz "!!! MATCH FOUND and CLEARED starting at ("
-debug_after_match: .asciiz "after matched"
-debug_closing_str: .ascii ")"
-diff_easy_msg:      .asciiz "Easy"
-diff_medium_msg:    .asciiz "Medium"
-diff_hard_msg:      .asciiz "Hard"
 ##############################################################################
 # Code  
 ##############################################################################
@@ -1581,13 +1571,6 @@ Draw_Digit_End:
     jr $ra
     
 Handle_GameOver:
-    move $t9, $v0
-    li $v0, 4
-    la $a0, debug_msg_resetY
-    syscall
-    move $v0, $t9
-    
-
     jal drawGameOverScreen
 
     jal resetGame       # Retry path: reset all game state and start fresh
