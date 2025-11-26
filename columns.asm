@@ -166,7 +166,7 @@ main:
     jal drawCol
     
 game_loop:       
-    # 1a. Check if key has been pressed
+    # Check if key has been pressed
     jal CheckKeyboardInput
 
     # Gravity
@@ -214,14 +214,12 @@ Skip_TimeSpeedup:
     
     jal Draw_Game_Grid
     jal drawCurrCol
-    # jal Draw_Score
     
     # Sleep for 16 ms
     li $v0, 32
     li $a0, 16
     syscall
     
-    # j game_loop
     b game_loop
 
 Handle_Landing:    
@@ -236,7 +234,7 @@ Handle_Landing:
     li $t1, 2
     blt $t0, $t1, Handle_GameOver
     
-    lw   $t0, nextCol0              # Replace currCol with nextCol
+    lw   $t0, nextCol0              
     sw   $t0, currCol0
     lw   $t0, nextCol1
     sw   $t0, currCol1
@@ -249,10 +247,7 @@ Handle_Landing:
     sw $t0, currColY
     sw $zero, gravity_timer         # set gravity_timer to 0
 
-    # 6. Generate new column and draw it
     jal drawCol
-
-    # 7. Draw full grid + new falling column
     jal Draw_Game_Grid
     jal drawCurrCol
     
@@ -268,7 +263,6 @@ Match_And_Fall_Loop:
     
     # Redraw everything 
     jal Draw_Game_Grid
-    # jal Draw_Score             
     
     or $t0, $s0, $s1
     beq $t0, $zero, Match_Loop_End
@@ -280,10 +274,7 @@ Skip_Gravity:
 
 Match_Loop_End:
     jal Reset_Chain
-    # jal Draw_Score
     b game_loop
-
-# game over
 	
 CheckKeyboardInput:
     lw $t0, ADDR_KBRD                  # $t0 = ADDR_KBRD
@@ -826,14 +817,12 @@ Check_Horizontal_Collision:
     
     add $t0, $s1, $s0              # $t0 = proposed new X position
 
-    # 1. Check for Wall Collision (X > 5 or X < 0)
+    # Check for Wall Collision (X > 5 or X < 0)
     blt $t0, $zero, H_Collision_Found     # If new X < 1, collision with left border
     lw $t9, GRID_WIDTH
     bge $t0, $t9, H_Collision_Found     # If new X >= 7, collision with right border
-
-    # addi $t0, $t0, -1
     
-    # 2. Check for Gem Collision (at new X, for Y, Y+1, Y+2)
+    # Check for Gem Collision (at new X, for Y, Y+1, Y+2)
     la $t1, GAME_GRID
     lw $t2, GRID_WIDTH
     li $t3, 0                      # Loop counter (i = 0, 1, 2)
@@ -844,19 +833,19 @@ H_GemCheck_Loop:
     # Calculate Y-coordinate for this gem
     add $t4, $s2, $t3              # $t4 = Y + i (the row)
     
-    # Skip check if gem is outside of the 12x6 grid (only affects top gem if currColY < 0)
-    lw $t5, GRID_HEIGHT             # $t5 = 12
-    blt $t4, $zero, H_Skip_Check   # If Y+i < 0, skip check
-    bge $t4, $t5, H_Skip_Check     # If Y+i >= 12, skip check 
+    # Skip check if gem is outside of the grid
+    lw $t5, GRID_HEIGHT            
+    blt $t4, $zero, H_Skip_Check  
+    bge $t4, $t5, H_Skip_Check    
 
     # Calculate Grid Index: Index = (Y + i) * 6 + (new X)
     mul $t5, $t4, $t2
-    add $t5, $t5, $t0              # $t5 = Index
+    add $t5, $t5, $t0          
 
     # Calculate memory address
     sll $t6, $t5, 2
     add $t7, $t1, $t6
-    lw $t8, 0($t7)                 # $t8 = Color at [new X][Y+i]
+    lw $t8, 0($t7)                
     lw $t9, EMPTY_COLOR
     
     bne $t8, $t9, H_Collision_Found # If (Color != EMPTY), collision with a gem
@@ -883,20 +872,20 @@ H_End:
 Check_Vertical_Collision:
     addi $sp, $sp, -12
     sw   $ra, 8($sp)
-    sw   $s0, 4($sp)      # gem index
-    sw   $s1, 0($sp)      # temp for debug
+    sw   $s0, 4($sp)     
+    sw   $s1, 0($sp)      
 
     lw $t0, currColX       # X pos (display: 1-6)
     lw $t1, currColY       # Y pos (top gem) (display: 1-17)
     la $t2, GAME_GRID
-    lw $t3, GRID_WIDTH     # 6
-    lw $t4, GRID_HEIGHT    # 18
+    lw $t3, GRID_WIDTH
+    lw $t4, GRID_HEIGHT
     lw $t9, EMPTY_COLOR
 
     li $v0, 0              # default: no collision
 
     # Loop over the 3 gems in the column
-    li $s0, 0              # gem index (0..2)
+    li $s0, 0
 
 V_Check_Loop:
     beq $s0, 3, V_No_Collision
@@ -926,7 +915,7 @@ V_Check_Loop:
 
     # Bounds check for grid access
     blt $t7, $zero, V_Skip_Gem
-    li $t8, 108            # 18 rows * 6 cols = 108 max index
+    li $t8, 108            
     bge $t7, $t8, V_Skip_Gem
 
     # Access memory
@@ -991,7 +980,7 @@ LockLoop:
     j Skip_Lock
 
 Use_Col0:
-    move $t4, $s3             # $t4 = color
+    move $t4, $s3            
     j Store_Lock
 Use_Col1:
     move $t4, $s4
@@ -1047,8 +1036,7 @@ Apply_Gravity:
 ColLoop_Gravity:
     beq $s4, $s1, GravityEnd
     
-    # Scan ENTIRE column from BOTTOM to TOP
-    # Track write_pos (where next gem should go)
+    # Scanning column from bottom to top
     li $s6, 16                  # write_pos = 16 (bottom row)
     li $s5, 16           # read_pos = HEIGHT-1 (start at bottom)
     
@@ -1059,7 +1047,7 @@ RowLoop_Gravity:
     mul $t0, $s5, $s1
     add $t1, $t0, $s4
     sll $t2, $t1, 2
-    add $t3, $s2, $t2           # &GAME_GRID[read_pos][X]
+    add $t3, $s2, $t2     
     lw $t4, 0($t3)              # gem at read_pos
     
     # If empty, just move to next
@@ -1070,7 +1058,7 @@ RowLoop_Gravity:
     mul $t5, $s6, $s1
     add $t6, $t5, $s4
     sll $t7, $t6, 2
-    add $t8, $s2, $t7           # &GAME_GRID[write_pos][X]
+    add $t8, $s2, $t7           
     
     # If read_pos == write_pos, gem doesn't move
     beq $s5, $s6, GemInPlace
@@ -1107,70 +1095,6 @@ GravityEnd:
     lw $ra, 32($sp)
     addi $sp, $sp, 36
     jr $ra
-
-# Prints the full GAME_GRID for debugging (Row-major order dump)
-Print_Grid_Contents:
-    # Save used $s registers ($s4 and $s5)
-    addi $sp, $sp, -8  
-    sw $s4, 4($sp)
-    sw $s5, 0($sp)
-
-    lw $t0, GRID_WIDTH             # $t0 = W (6)
-    li $s5, 0                   # $s5 = Row Y (0)
-PrintGrid_Rows:
-    lw $t1, GRID_HEIGHT             # $t1 = H (18)
-    add $t1, $t1, -1                # playing grid height is 17
-    bge $s5, $t1, PrintGrid_Done   # if Y >= H, finish printing
-    
-    li $s4, 0                   # $s4 = Column X (0)
-PrintGrid_Cols:
-    beq $s4, $t0, NextGrid_Row     # if X == W, go to next row
-    
-    # Calculate Index (Y * W + X) * 4
-    mul $t2, $s5, $t0
-    add $t2, $t2, $s4
-    sll $t3, $t2, 2
-    la $t4, GAME_GRID
-    add $t5, $t4, $t3
-    
-    lw $t6, 0($t5)              # $t6 = Load the color/value from memory (GAME_GRID[Y][X])
-    
-    # Print the integer value (color)
-    li $v0, 1               
-    move $a0, $t6              
-    syscall
-    
-    # Print a space/separator
-    li $v0, 4               
-    la $a0, space     
-    syscall
-    
-    # Advance X and loop
-    addi $s4, $s4, 1
-    j PrintGrid_Cols
-    
-NextGrid_Row:
-    # Print a newline at the end of the row 
-    li $v0, 4
-    la $a0, newline 
-    syscall
-    
-    # Advance Y and loop
-    addi $s5, $s5, 1
-    j PrintGrid_Rows
-    
-PrintGrid_Done:
-    # Print a final newline after the dump
-    li $v0, 4
-    la $a0, newline
-    syscall
-    
-    # Restore registers and stack
-    lw $s5, 0($sp)
-    lw $s4, 4($sp)
-    addi $sp, $sp, 8
-    
-    jr $ra
 
 
 # Function: Check_For_Matches
@@ -1222,7 +1146,6 @@ MatchXLoop:
     lw $t4, 0($t3)
     beq $t4, $s4, NextX_Match       # If Color is EMPTY, skip
     
-    # storing first column's color to fix overwrite issue
     addi $sp, $sp, -4
     sw $t4, 0($sp)                  # Save current Color (C0)
     
@@ -1230,8 +1153,7 @@ MatchXLoop:
     addi $sp, $sp, 4                # Restore $sp
 
     # Set up start X for Check_Direction
-    move $s7, $s6                   # $s7 = Current X (save it once)
-    
+    move $s7, $s6                 
     li $t0, 15
     bgt $s5, $t0, Skip_Check_Vertical    # If Y > 15, skip this check
     
@@ -1258,7 +1180,7 @@ Skip_Check_Horizontal:
     # Check Diagonal Down-Right (dx=1, dy=1). Check if X <= 3 AND Y <= 15 
     li $t0, 3
     bgt $s7, $t0, Skip_Check_DR      # If X > 3, skip
-    li $t1, 15                      # Y limit is 15 (18 rows total)
+    li $t1, 15                       # Y limit is 15 (18 rows total)
     bgt $s5, $t1, Skip_Check_DR      # If Y > 15, skip
     
     # Call Check_Direction for Diagonal Down-Right
@@ -1321,12 +1243,12 @@ MatchLoopEnd:
 # Returns $v0 = 1 if match found
 Check_Direction: 
     # Save $ra and used $s registers ($s0, $s1, $s2, $s3)
-    addi $sp, $sp, -20             # Allocate 5 words (20 bytes)
+    addi $sp, $sp, -20          
     sw $ra, 16($sp)
-    sw $s0, 12($sp)                # $s0 will hold &GAME_GRID
-    sw $s1, 8($sp)                 # $s1 will hold Address 1
-    sw $s2, 4($sp)                 # $s2 will hold Address 2
-    sw $s3, 0($sp)                 # $s3 will hold Address 0
+    sw $s0, 12($sp)                
+    sw $s1, 8($sp)               
+    sw $s2, 4($sp)              
+    sw $s3, 0($sp)                
 
     li $v0, 0                      # Default return value: 0 (No match cleared)
 
@@ -1338,8 +1260,8 @@ Check_Direction:
     move $t3, $s7                  # $t3 = X (start X)
     move $t4, $a2                  # $t4 = Y (start Y)
     
-    # GEM 0: (X, Y)
-    # BOUNDS CHECK for Gem 0
+    # gem 0: (X, Y)
+    # bounds check for Gem 0
     blt $t3, $zero, DirEnd_NoMatch
     bge $t3, $t0, DirEnd_NoMatch
     blt $t4, $zero, DirEnd_NoMatch
@@ -1351,16 +1273,15 @@ Check_Direction:
     sll $t6, $t6, 2
     add $s3, $s0, $t6              # $s3 = Address 0
     lw $t8, 0($s3)                 # $t8 = Color 0 (C0)
-    
-    move $t5, $t8                  # Save C0's color to $t5 for comparison.
+    move $t5, $t8                 
     
     beq $t8, $t2, DirEnd_NoMatch   # If C0 is empty, no match possible.
     
-    # GEM 1: (X+dX, Y+dY)
+    # gem 1: (X+dX, Y+dY)
     add $t3, $t3, $a0              # X = X + dX
     add $t4, $t4, $a1              # Y = Y + dY
     
-    # BOUNDS CHECK for Gem 1
+    # bounds check for Gem 1
     blt $t3, $zero, DirEnd_NoMatch
     lw $t9, GRID_WIDTH
     bge $t3, $t9, DirEnd_NoMatch
@@ -1376,11 +1297,11 @@ Check_Direction:
     
     bne $t8, $t5, DirEnd_NoMatch   # Compare C1 ($t8) with C0 ($t5)
     
-    # GEM 2: (X+2dX, Y+2dY)
+    # gem 2: (X+2dX, Y+2dY)
     add $t3, $t3, $a0              # X = X + dX
     add $t4, $t4, $a1              # Y = Y + dY
     
-    # BOUNDS CHECK for Gem 2
+    # Bounds check for Gem 2
     blt $t3, $zero, DirEnd_NoMatch
     lw $t9, GRID_WIDTH
     bge $t3, $t9, DirEnd_NoMatch
@@ -1394,7 +1315,6 @@ Check_Direction:
     add $s2, $s0, $t6              # $s2 = Address 2 (Saved in $s2)
     lw $t8, 0($s2)                 # $t8 = Color 2 (C2)
     
-    # Compare C2 with C0 (now in $t5)
     bne $t8, $t5, DirEnd_NoMatch   # Compare C2 ($t8) with C0 ($t5)
 MatchFound:
     addi $sp, $sp, -12
@@ -1444,7 +1364,7 @@ Update_Score:
     lw $t1, chain_level     # Load chain level
     
     # Calculate points: 1 * 3 gems * (1 + chain_level)
-    li $t2, 3              # Base points (1 per gem * 3 gems)
+    li $t2, 3               # Base points (1 per gem * 3 gems)
     addi $t3, $t1, 1        # Multiplier = 1 + chain_level
     mul $t2, $t2, $t3       # Points = base * multiplier
     
@@ -1597,7 +1517,7 @@ Draw_Digit:
     sw $s4, 0($sp)
     
     # Get digit pattern address directly using branches
-    move $s0, $a0           # Save digit value
+    move $s0, $a0       
     la $t0, digit_0
     beq $s0, 0, Got_Digit_Addr
     la $t0, digit_1
@@ -1641,7 +1561,6 @@ Draw_Digit_Row_Loop:
 Draw_Digit_Pixel_Loop:
     beq $s4, 3, Draw_Digit_Next_Row
     
-    # Check if bit is set
     li $t4, 0b100
     srlv $t4, $t4, $s4      # Shift right by column number
     and $t5, $t3, $t4       # Check if bit is set
@@ -1685,10 +1604,12 @@ Handle_GameOver:
 
     jal resetGame       # Retry path: reset all game state and start fresh
     jal clearDisplay
+    
     # Show difficulty selection screen
     jal showDifficultyScreen
     jal selectDifficulty
     jal applyDifficultySettings
+    
     jal clearDisplay
     jal drawBorder       # Re-draw things and continue the main game loop
     jal drawCol          
@@ -1699,8 +1620,8 @@ Handle_GameOver:
 # Function: drawGameOverScreen
 drawGameOverScreen:
     addi $sp, $sp, -8
-    sw   $ra, 4($sp)         # save return addr
-    sw   $s0, 0($sp)         # save $s0 (we'll use it for display base)
+    sw   $ra, 4($sp)       
+    sw   $s0, 0($sp)         
     
     lw   $s0, ADDR_DSPL       # display base
     li   $t1, 0               # clear color
@@ -1876,7 +1797,7 @@ done:
 gameOverOptions:
     addi $sp, $sp, -8
     sw $ra, 4($sp)
-    sw $t0, 0($sp)        # temporary save
+    sw $t0, 0($sp)    
 
 gameOverOptionsLoop:
     li $v0, 32
@@ -1889,7 +1810,7 @@ gameOverOptionsLoop:
     j gameOverOptionsLoop
 
 gameOverOptionsKeyInput:
-    lw $t2, 4($t0)                  # ascii code
+    lw $t2, 4($t0)                
     beq $t2, 0x72, gameOverRetry
     beq $t2, 0x71, gameOverQuit
     j gameOverOptionsLoop
@@ -1926,32 +1847,6 @@ resetGameClearLoop:
     j resetGameClearLoop
     
 resetGameClearEnd:
-    # sw $zero, score
-    # sw $zero, chain_level
-
-    # li $t0, 2
-    # sw $t0, currColX
-    # li $t0, 1
-    # sw $t0, currColY
-
-    # sw $zero, currCol0
-    # sw $zero, currCol1
-    # sw $zero, currCol2
-
-    # sw $zero, gravity_timer
-    # sw $zero, gravity_elapsed
-    # li $t0, 500000
-    # # sw $t0, gravity_interval
-
-    # # lw $t0, ADDR_DSPL    # no-op but keeps pattern
-    # # Reset difficulty flag to show menu again
-    # sw $zero, difficulty_selected
-
-    # lw $t1, 0($sp)
-    # lw $t0, 4($sp)
-    # lw $ra, 8($sp)
-    # addi $sp, $sp, 12
-    # jr $ra
     la $t0, score
     sw $zero, 0($t0)
     la $t0, chain_level
@@ -2034,7 +1929,7 @@ showDifficultyScreen:
     lw $t1, borderColour
     
     # Draw "EASY" at Y=6
-    addi $t4, $s0, 780          # Position for EASY text
+    addi $t4, $s0, 780          
     # E
     sw $t1, 0($t4)
     sw $t1, 4($t4)
@@ -2116,19 +2011,19 @@ showDifficultyScreen:
     # Draw "MEDIUM" at Y=11
     addi $t4, $s0, 1548
     # M
-    sw $t1, 0($t4)      # Row 0, left edge
-    sw $t1, 16($t4)     # Row 0, right edge
-    sw $t1, 128($t4)    # Row 1, left edge
-    sw $t1, 132($t4)    # Row 1, second pixel
-    sw $t1, 140($t4)    # Row 1, fourth pixel
-    sw $t1, 144($t4)    # Row 1, right edge
-    sw $t1, 256($t4)    # Row 2, left edge
-    sw $t1, 264($t4)    # Row 2, middle pixel
-    sw $t1, 272($t4)    # Row 2, right edge
-    sw $t1, 384($t4)    # Row 3, left edge
-    sw $t1, 400($t4)    # Row 3, right edge
-    sw $t1, 512($t4)    # Row 4, left edge
-    sw $t1, 528($t4)    # Row 4, right edge
+    sw $t1, 0($t4)     
+    sw $t1, 16($t4)    
+    sw $t1, 128($t4)   
+    sw $t1, 132($t4)   
+    sw $t1, 140($t4)   
+    sw $t1, 144($t4)   
+    sw $t1, 256($t4)  
+    sw $t1, 264($t4)   
+    sw $t1, 272($t4)   
+    sw $t1, 384($t4)    
+    sw $t1, 400($t4)    
+    sw $t1, 512($t4)    
+    sw $t1, 528($t4)   
     
     # E
     addi $t4, $s0, 1572
@@ -2302,11 +2197,11 @@ selectDifficultyLoop:
     lw $t1, 4($t9)
     
     # Check for 1, 2, or 3
-    li $t2, 0x31                    # ASCII '1'
+    li $t2, 0x31                   
     beq $t1, $t2, setEasy
-    li $t2, 0x32                    # ASCII '2'
+    li $t2, 0x32                   
     beq $t1, $t2, setMedium
-    li $t2, 0x33                    # ASCII '3'
+    li $t2, 0x33                   
     beq $t1, $t2, setHard
     
     j selectDifficultyLoop
