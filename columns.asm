@@ -1652,7 +1652,6 @@ Handle_GameOver:
     
 
     jal drawGameOverScreen
-    jal gameOverOptions
 
     jal resetGame       # Retry path: reset all game state and start fresh
     jal clearDisplay
